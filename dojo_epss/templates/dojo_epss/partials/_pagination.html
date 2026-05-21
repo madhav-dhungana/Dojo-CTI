@@ -1,0 +1,18 @@
+{% load i18n %}
+{% if page.has_other_pages %}
+<nav>
+  <ul class="pagination">
+    {% if page.has_previous %}
+      <li><a href="?page={{ page.previous_page_number }}">«</a></li>
+    {% endif %}
+    <li class="active"><span>
+      {% blocktrans with current=page.number total=page.paginator.num_pages %}
+        Page {{ current }} of {{ total }}
+      {% endblocktrans %}
+    </span></li>
+    {% if page.has_next %}
+      <li><a href="?page={{ page.next_page_number }}">»</a></li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}

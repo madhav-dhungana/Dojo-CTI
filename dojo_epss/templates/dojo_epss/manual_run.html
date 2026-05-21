@@ -1,0 +1,137 @@
+{% extends "dojo_epss/base.html" %}
+{% load i18n %}
+
+{% block epss_page_title %}{% trans "Manual EPSS / KEV actions" %}{% endblock %}
+
+{% block epss_page_body %}
+<style>
+  .dojo-epss-shell .panel-default .dojo-epss-action-button.btn-primary {
+    background-color: #546474 !important;
+    border: 1px solid #546474 !important;
+    color: #fff !important;
+    font-weight: 600;
+    line-height: 1.35;
+    min-height: 34px;
+    white-space: normal;
+  }
+  .dojo-epss-shell .panel-default .dojo-epss-action-button.btn-primary:hover,
+  .dojo-epss-shell .panel-default .dojo-epss-action-button.btn-primary:focus {
+    background-color: #38434d !important;
+    border-color: #38434d !important;
+    color: #fff !important;
+  }
+  .dojo-epss-action-field {
+    margin-bottom: 8px;
+    width: 100%;
+  }
+</style>
+
+{% if not settings.enabled %}
+  <div class="alert alert-warning">
+    {% trans "The EPSS/KEV module is currently disabled in settings. Manual actions still record audit logs but actions that depend on the module will be marked 'skipped'." %}
+  </div>
+{% endif %}
+
+<div class="row">
+  <div class="col-md-6">
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Fetch EPSS Data" %}</div>
+      <div class="panel-body">
+        {% if settings.fetch_recent_enabled and not settings.download_full_csv_enabled %}
+          <form action="{% url 'dojo_epss:action_firstorg_fetch' %}" method="post" style="margin-bottom: 6px;">
+            {% csrf_token %}
+            <button class="btn btn-primary btn-block dojo-epss-action-button" type="submit">
+              {% trans "Fetch and Compare from FIRST.org" %}
+            </button>
+            <p class="help-block" style="margin-top: 6px;">
+              {% trans "Extracts CVEs from DefectDojo Findings, fetches EPSS for those CVEs from FIRST.org, then compares the stored EPSS records against Findings." %}
+            </p>
+          </form>
+        {% elif settings.download_full_csv_enabled and not settings.fetch_recent_enabled %}
+          <form action="{% url 'dojo_epss:action_download_csv' %}" method="post" style="margin-bottom: 6px;">
+            {% csrf_token %}
+            <input type="date" name="score_date" class="form-control dojo-epss-action-field"
+                   placeholder="YYYY-MM-DD (blank = latest)">
+            <button class="btn btn-primary btn-block dojo-epss-action-button" type="submit">
+              {% trans "Download CSV and Compare" %}
+            </button>
+            <p class="help-block" style="margin-top: 6px;">
+              {% trans "Downloads the always-current FIRST.org daily snapshot, or a specific date if provided, then compares the stored EPSS records against Findings." %}
+            </p>
+          </form>
+        {% elif settings.fetch_recent_enabled and settings.download_full_csv_enabled %}
+          <div class="alert alert-warning" style="margin-top: 12px;">
+            {% trans "Both fetch sources are enabled, which is inconsistent. Open EPSS Settings and disable one." %}
+          </div>
+        {% else %}
+          <div class="alert alert-info" style="margin-top: 12px;">
+            {% trans "Neither fetch source is enabled. Open EPSS Settings and enable exactly one." %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Check KEV Data" %}</div>
+      <div class="panel-body">
+        {% if settings.kev_enabled and settings.kev_update_findings_enabled %}
+          <form action="{% url 'dojo_epss:action_kev_sync' %}" method="post" style="margin-bottom: 6px;">
+            {% csrf_token %}
+            <button class="btn btn-primary btn-block dojo-epss-action-button" type="submit">
+              {% if settings.kev_source_type == "csv" %}
+                {% trans "Download KEV CSV and Update Findings" %}
+              {% else %}
+                {% trans "Fetch KEV and Update Findings" %}
+              {% endif %}
+            </button>
+            <p class="help-block" style="margin-top: 6px;">
+              {% trans "Checks only CVEs already present in DefectDojo Findings, then positively updates Known Exploited, Used in Ransomware, and first-found KEV date fields." %}
+            </p>
+          </form>
+        {% elif not settings.kev_enabled %}
+          <div class="alert alert-info" style="margin-top: 12px;">
+            {% trans "KEV checks are disabled. Open EPSS Settings to enable them." %}
+          </div>
+        {% else %}
+          <div class="alert alert-info" style="margin-top: 12px;">
+            {% trans "KEV Finding updates are disabled. Open EPSS Settings to enable them." %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <div class="col-md-6">
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Update Findings" %}</div>
+      <div class="panel-body">
+        <p class="help-block" style="margin-top: 0;">
+          {% trans "Apply the latest matched EPSS values to eligible DefectDojo Findings." %}
+        </p>
+
+        <form action="{% url 'dojo_epss:action_auto_update' %}" method="post">
+          {% csrf_token %}
+          <button class="btn btn-warning btn-block" {% if not settings.auto_update_enabled %}disabled
+	                  title="{% trans 'Enable auto-update in settings first' %}"{% endif %}>
+            {% trans "Auto-update eligible Findings" %}
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Diagnostics" %}</div>
+      <div class="panel-body">
+        <form action="{% url 'dojo_epss:action_test_connection' %}" method="post">
+          {% csrf_token %}
+          <button class="btn btn-default btn-block">{% trans "Test FIRST.org API connectivity" %}</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

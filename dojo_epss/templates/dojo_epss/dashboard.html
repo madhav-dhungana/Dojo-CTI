@@ -1,0 +1,113 @@
+{% extends "dojo_epss/base.html" %}
+{% load i18n %}
+
+{% block epss_page_title %}{% trans "EPSS / KEV Dashboard" %}{% endblock %}
+
+{% block epss_page_body %}
+<div class="row">
+  <div class="col-md-8">
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Status" %}</div>
+      <div class="panel-body">
+        <dl class="dl-horizontal">
+          <dt>{% trans "Module" %}</dt>
+          <dd>{% if settings.enabled %}<span class="label label-success">{% trans "enabled" %}</span>{% else %}<span class="label label-default">{% trans "disabled" %}</span>{% endif %}</dd>
+          <dt>{% trans "KEV checks" %}</dt>
+          <dd>{% if settings.kev_enabled %}<span class="label label-success">{% trans "enabled" %}</span>{% else %}<span class="label label-default">{% trans "disabled" %}</span>{% endif %}</dd>
+          <dt>{% trans "Last fetch" %}</dt>
+          <dd>{% if last_fetch %}{{ last_fetch.started_at }} ({{ last_fetch.get_action_display }}){% else %}—{% endif %}</dd>
+          <dt>{% trans "Last compare" %}</dt>
+          <dd>{% if last_compare %}{{ last_compare.started_at }}{% else %}—{% endif %}</dd>
+          <dt>{% trans "Last auto-update" %}</dt>
+          <dd>{% if last_update %}{{ last_update.started_at }} ({{ last_update.total_findings_updated }} updated){% else %}—{% endif %}</dd>
+          <dt>{% trans "Last KEV sync" %}</dt>
+          <dd>{% if last_kev %}{{ last_kev.started_at }} ({{ last_kev.total_findings_updated }} updated){% else %}—{% endif %}</dd>
+          <dt>{% trans "Findings with EPSS match" %}</dt><dd>{{ counts.matches }}</dd>
+          <dt>{% trans "Findings updated" %}</dt><dd>{{ counts.updated }}</dd>
+          <dt>{% trans "Findings skipped" %}</dt><dd>{{ counts.skipped }}</dd>
+          <dt>{% trans "Failed updates" %}</dt><dd>{{ counts.failed }}</dd>
+          <dt>{% trans "Findings with KEV" %}</dt><dd>{{ kev_counts.matches }}</dd>
+          <dt>{% trans "Used in ransomware" %}</dt><dd>{{ kev_counts.ransomware }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Top findings by EPSS score" %}</div>
+      <table class="table table-striped">
+        <thead><tr>
+          <th>{% trans "Finding" %}</th><th>{% trans "CVE" %}</th>
+          <th>{% trans "EPSS" %}</th><th>{% trans "KEV" %}</th><th>{% trans "Status" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for fu in top_matches %}
+          <tr>
+            <td>#{{ fu.finding_id }} {{ fu.finding.title|default:"" }}</td>
+            <td>{{ fu.cve_id }}</td>
+            <td>{{ fu.epss_score }}</td>
+            <td>
+              {% if fu.kev_snapshot.known_exploited or fu.finding.known_exploited %}
+                <span class="label label-danger">{% trans "KEV" %}</span>
+                {% if fu.kev_snapshot.ransomware_used or fu.finding.ransomware_used %}
+                  <span class="label label-warning">{% trans "Ransomware" %}</span>
+                {% endif %}
+                {% if fu.kev_snapshot.kev_found_date %}
+                  {{ fu.kev_snapshot.kev_found_date }}
+                {% elif fu.finding.kev_date %}
+                  {{ fu.finding.kev_date }}
+                {% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>{{ fu.get_status_display }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5">{% trans "No matched findings yet. Run a FIRST.org fetch to start." %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Recent runs" %}</div>
+      <table class="table table-striped">
+        <thead><tr>
+          <th>#</th><th>{% trans "Action" %}</th><th>{% trans "Status" %}</th>
+          <th>{% trans "Started" %}</th><th>{% trans "EPSS CVEs" %}</th><th>{% trans "KEV" %}</th>
+          <th>{% trans "Matched" %}</th><th>{% trans "Updated" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for r in last_runs %}
+          <tr>
+            <td><a href="{% url 'dojo_epss:log_detail' r.pk %}">#{{ r.pk }}</a></td>
+            <td>{{ r.get_action_display }}</td>
+            <td>{{ r.get_status_display }}</td>
+            <td>{{ r.started_at }}</td>
+            <td>{% if r.action == 'kev_sync' %}—{% else %}{{ r.total_cves_fetched }}{% endif %}</td>
+            <td>{% if r.action == 'kev_sync' %}{{ r.total_cves_saved }} / {{ r.total_cves_fetched }}{% else %}—{% endif %}</td>
+            <td>{{ r.total_matches }}</td>
+            <td>{{ r.total_findings_updated }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8">{% trans "No runs yet." %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Quick links" %}</div>
+      <div class="panel-body">
+        <a href="{% url 'dojo_epss:settings' %}" class="btn btn-link">{% trans "Settings" %} →</a><br>
+        <a href="{% url 'dojo_epss:finding_matches' %}" class="btn btn-link">{% trans "Finding Matches" %} →</a><br>
+        <a href="{% url 'dojo_epss:logs' %}" class="btn btn-link">{% trans "Update Logs" %} →</a><br>
+        <a href="{% url 'dojo_epss:manual_run' %}" class="btn btn-link">{% trans "Manual Run" %} →</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

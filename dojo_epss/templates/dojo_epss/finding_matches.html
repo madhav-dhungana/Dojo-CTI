@@ -1,0 +1,75 @@
+{% extends "dojo_epss/base.html" %}
+{% load i18n %}
+
+{% block epss_page_title %}{% trans "Finding EPSS / KEV Matches" %}{% endblock %}
+
+{% block epss_page_body %}
+<form method="get" class="form-inline" style="margin-bottom: 12px;">
+  <label>{% trans "Status" %}</label>
+  <select name="status" class="form-control">
+    <option value="">{% trans "(any)" %}</option>
+    {% for value, label in status_choices %}
+      <option value="{{ value }}"{% if value == current_status %} selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-default">{% trans "Apply" %}</button>
+</form>
+
+<table class="table table-striped">
+  <thead><tr>
+    <th>{% trans "Finding" %}</th><th>{% trans "Title" %}</th>
+    <th>{% trans "Severity" %}</th><th>{% trans "Active" %}</th>
+    <th>{% trans "CVE" %}</th><th>{% trans "EPSS" %}</th>
+    <th>{% trans "Percentile" %}</th><th>{% trans "EPSS date" %}</th>
+    <th>{% trans "KEV" %}</th><th>{% trans "Ransomware" %}</th>
+    <th>{% trans "KEV found" %}</th>
+    <th>{% trans "Status" %}</th>
+    <th>{% trans "Last checked" %}</th>
+    <th>{% trans "Last updated" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for fu in page.object_list %}
+    <tr>
+      <td>#{{ fu.finding_id }}</td>
+      <td>{{ fu.finding.title|default:"" }}</td>
+      <td>{{ fu.finding.severity|default:"—" }}</td>
+      <td>{{ fu.finding.active|yesno:"yes,no" }}</td>
+      <td>{{ fu.cve_id }}</td>
+      <td>{{ fu.epss_score|default:"—" }}</td>
+      <td>{{ fu.epss_percentile|default:"—" }}</td>
+      <td>{{ fu.epss_date|default:"—" }}</td>
+      <td>
+        {% if fu.kev_snapshot.known_exploited or fu.finding.known_exploited %}
+          <span class="label label-danger">{% trans "Yes" %}</span>
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>
+        {% if fu.kev_snapshot.ransomware_used or fu.finding.ransomware_used %}
+          <span class="label label-warning">{% trans "Yes" %}</span>
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>
+        {% if fu.kev_snapshot.kev_found_date %}
+          {{ fu.kev_snapshot.kev_found_date }}
+        {% elif fu.finding.kev_date %}
+          {{ fu.finding.kev_date }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>{{ fu.get_status_display }}</td>
+      <td>{{ fu.last_checked_at|default:"—" }}</td>
+      <td>{{ fu.last_updated_at|default:"—" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="14">{% trans "No matched findings yet." %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "dojo_epss/partials/_pagination.html" with page=page %}
+{% endblock %}

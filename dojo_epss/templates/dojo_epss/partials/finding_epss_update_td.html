@@ -1,0 +1,16 @@
+{% comment %}
+Body cell for the "EPSS Update" column.
+
+Patch instructions: in DefectDojo's
+"dojo/templates/dojo/findings_list_snippet.html", immediately after the
+existing EPSS Percentile <td> (around line 638 in 2.58.2 — the line right
+after finding.epss_percentile|format_epss), add a <td> that includes this
+partial with finding=finding.
+
+For pages with many rows, also add once before the row loop:
+  {% templatetag openblock %} load dojo_epss_tags {% templatetag closeblock %}
+  {% templatetag openblock %} epss_update_preload findings {% templatetag closeblock %}
+then switch the body cell to {% templatetag openblock %} epss_update_for_preloaded finding {% templatetag closeblock %}.
+{% endcomment %}
+{% load dojo_epss_tags %}
+{% epss_update_for finding %}

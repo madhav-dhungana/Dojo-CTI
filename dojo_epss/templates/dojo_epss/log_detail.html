@@ -1,0 +1,86 @@
+{% extends "dojo_epss/base.html" %}
+{% load i18n %}
+
+
+{% block epss_page_title %}{% blocktrans with id=log.pk %}Update log #{{ id }}{% endblocktrans %}{% endblock %}
+
+{% block epss_page_body %}
+<div class="row">
+  <div class="col-md-6">
+    <dl class="dl-horizontal">
+      <dt>{% trans "Action" %}</dt><dd>{{ log.get_action_display }}</dd>
+      <dt>{% trans "Status" %}</dt><dd>{{ log.get_status_display }}</dd>
+      <dt>{% trans "Started" %}</dt><dd>{{ log.started_at }}</dd>
+      <dt>{% trans "Finished" %}</dt><dd>{{ log.finished_at|default:"—" }}</dd>
+      <dt>{% trans "Requested by" %}</dt><dd>{{ log.requested_by|default:"system" }}</dd>
+    </dl>
+  </div>
+  <div class="col-md-6">
+    <dl class="dl-horizontal">
+      {% if log.action == 'kev_sync' %}
+        <dt>{% trans "KEV feed rows" %}</dt><dd>{{ log.total_cves_fetched }}</dd>
+        <dt>{% trans "KEV CVEs matched" %}</dt><dd>{{ log.total_cves_saved }}</dd>
+      {% else %}
+        <dt>{% trans "CVEs fetched" %}</dt><dd>{{ log.total_cves_fetched }}</dd>
+        <dt>{% trans "CVEs saved" %}</dt><dd>{{ log.total_cves_saved }}</dd>
+      {% endif %}
+      <dt>{% trans "Findings scanned" %}</dt><dd>{{ log.total_findings_scanned }}</dd>
+      <dt>{% trans "Matches" %}</dt><dd>{{ log.total_matches }}</dd>
+      <dt>{% trans "Updated" %}</dt><dd>{{ log.total_findings_updated }}</dd>
+      <dt>{% trans "Skipped" %}</dt><dd>{{ log.total_skipped }}</dd>
+      <dt>{% trans "Failed items" %}</dt><dd>{{ log.total_failed }}</dd>
+    </dl>
+  </div>
+</div>
+
+{% if log.error_message %}
+  {% if request.user.is_superuser %}
+    <div class="alert alert-danger"><pre style="white-space: pre-wrap;">{{ log.error_message }}</pre></div>
+  {% else %}
+    <div class="alert alert-danger">{% trans "This run recorded an error. Error details are visible to superusers only." %}</div>
+  {% endif %}
+{% endif %}
+
+{% if request.user.is_superuser %}
+  <h4>{% trans "Request parameters" %}</h4>
+  <pre>{{ log.request_params|default:'{}' }}</pre>
+
+  <h4>{% trans "Details" %}</h4>
+  <pre>{{ log.details|default:'{}' }}</pre>
+{% else %}
+  <div class="alert alert-info">
+    {% trans "Request parameters and detailed run data are visible to superusers only." %}
+  </div>
+{% endif %}
+
+{% if batches %}
+<h4>{% trans "Download batches" %}</h4>
+<table class="table table-striped">
+  <thead><tr>
+    <th>#</th><th>{% trans "Date" %}</th><th>{% trans "URL" %}</th>
+    <th>{% trans "Status" %}</th><th>{% trans "Records" %}</th>
+    <th>{% trans "Processed at" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for b in batches %}
+    <tr>
+      <td>{{ b.pk }}</td>
+      <td>{{ b.epss_date }}</td>
+      <td>
+        {% if request.user.is_superuser %}
+          <code>{{ b.source_url }}</code>
+        {% else %}
+          {% trans "Visible to superusers only" %}
+        {% endif %}
+      </td>
+      <td>{{ b.get_status_display }}</td>
+      <td>{{ b.records_processed }}</td>
+      <td>{{ b.processed_at|default:"—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<a href="{% url 'dojo_epss:logs' %}" class="btn btn-link">← {% trans "Back to logs" %}</a>
+{% endblock %}

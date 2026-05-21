@@ -1,0 +1,10 @@
+{% comment %}
+Header cell for the "EPSS Update" column.
+
+Patch instructions: in DefectDojo's
+"dojo/templates/dojo/findings_list_snippet.html", immediately after the
+existing "EPSS Percentile" <th> (around line 330 in 2.58.2), add one
+include of this partial.
+{% endcomment %}
+{% load i18n %}
+<th scope="col">{% trans "EPSS Update" %}</th>

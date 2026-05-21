@@ -1,0 +1,39 @@
+# Production-mode compose override for dojo_epss.
+#
+# Only `uwsgi` has a `build:` block here — the other three Django/Celery
+# services in DefectDojo's base compose just reference the same image tag
+# without rebuilding (and would inherit `target: release` from the base
+# uwsgi block if we redeclared their build, which is what tripped up
+# earlier versions of this file).
+#
+# Once `uwsgi` builds the `dojo-epss-django:local` image, Docker reuses
+# the same image for the other three services because they all point at
+# the same tag.
+#
+# Use:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f dojo_epss_pkg/docker/docker-compose.override.dojo-epss.yml \
+#     up -d --build
+# The overlay installs a static hourly Celery beat dispatcher. EPSS/KEV
+# intervals are controlled from the EPSS / KEV Settings page.
+
+services:
+  uwsgi:
+    image: dojo-epss-django:local
+    build:
+      context: .
+      dockerfile: dojo_epss_pkg/docker/Dockerfile.dojo-epss-overlay
+      # target: release is inherited from the base compose. Our Dockerfile
+      # names its stage `release` so this resolves cleanly.
+      args:
+        DEFECTDOJO_TAG: ${DEFECTDOJO_TAG:-latest}
+
+  celeryworker:
+    image: dojo-epss-django:local
+
+  celerybeat:
+    image: dojo-epss-django:local
+
+  initializer:
+    image: dojo-epss-django:local

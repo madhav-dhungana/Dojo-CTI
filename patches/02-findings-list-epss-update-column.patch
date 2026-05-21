@@ -1,0 +1,31 @@
+--- a/dojo/templates/dojo/findings_list_snippet.html	2026-05-17 10:16:16.400002686 +0000
++++ b/dojo/templates/dojo/findings_list_snippet.html	2026-05-17 10:16:16.410002686 +0000
+@@ -328,6 +328,8 @@
+                                     <th scope="col">
+                                         {% trans "EPSS Percentile" %}
+                                     </th>
++                                    {% comment %}dojo_epss: additive 'EPSS Update' column header{% endcomment %}
++                                    {% include "dojo_epss/partials/finding_epss_update_th.html" %}
+                                     <th scope="col">
+                                         {% trans "Known Exploited" %}
+                                     </th>
+@@ -638,6 +640,10 @@
+                                         <td class="nowrap text-right">
+                                             {{ finding.epss_percentile|format_epss }}
+                                         </td>
++                                        {% comment %}dojo_epss: additive 'EPSS Update' column body cell{% endcomment %}
++                                        <td class="nowrap">
++                                            {% include "dojo_epss/partials/finding_epss_update_td.html" with finding=finding %}
++                                        </td>
+                                         <td class="nowrap text-right">
+                                             {{ finding.known_exploited|yesno|capfirst }}
+                                         </td>
+@@ -797,6 +803,8 @@
+                     { "data": "cve" },
+                     { "data": "epss_score", "type": "num", "render": percentSort },
+                     { "data": "epss_percentile", "type": "num", "render": percentSort },
++                    /* dojo_epss: keep DataTables column count in sync with extra <th>/<td> */
++                    { "data": "epss_update", "orderable": false },
+                     { "data": "known_exploited", },
+                     { "data": "used_ransomware", },
+                     { "data": "kev_date", render: function(data, type, row, meta) {

@@ -1,0 +1,36 @@
+{% comment %}
+Sidebar entry for the EPSS section.
+
+Patch instructions: in DefectDojo's "dojo/templates/base.html", inside the
+sidebar-items block (around line 228-655 in 2.58.2), add a single line just
+before the block closes:
+
+    {% templatetag openblock %} include "dojo_epss/partials/sidebar_menu.html" {% templatetag closeblock %}
+
+The fragment uses the {% templatetag openblock %} url 'dojo_epss:dashboard' as ... {% templatetag closeblock %} idiom so if
+the URLs aren't mounted yet the entire <li> evaluates to nothing — safe
+to leave in place during upgrades or when temporarily disabling the
+module.
+
+NOTE: We deliberately don't list a "CVE Records" link — this library is
+finding-driven, so the EPSS catalog is an internal cache, not an
+end-user concern.
+{% endcomment %}
+{% load i18n %}
+{% url 'dojo_epss:dashboard' as epss_dashboard_url %}
+{% if epss_dashboard_url %}
+<li>
+  <a href="{{ epss_dashboard_url }}" aria-expanded="false" aria-label="EPSS">
+    <i class="fa-solid fa-shield-halved fa-fw"></i>
+    <span>{% trans "EPSS" %}</span>
+    <span class="glyphicon arrow"></span>
+  </a>
+  <ul class="nav nav-second-level">
+    <li><a href="{{ epss_dashboard_url }}">{% trans "EPSS Dashboard" %}</a></li>
+    <li><a href="{% url 'dojo_epss:settings' %}">{% trans "EPSS Settings" %}</a></li>
+    <li><a href="{% url 'dojo_epss:finding_matches' %}">{% trans "Finding Matches" %}</a></li>
+    <li><a href="{% url 'dojo_epss:logs' %}">{% trans "Update Logs" %}</a></li>
+    <li><a href="{% url 'dojo_epss:manual_run' %}">{% trans "Manual Run" %}</a></li>
+  </ul>
+</li>
+{% endif %}

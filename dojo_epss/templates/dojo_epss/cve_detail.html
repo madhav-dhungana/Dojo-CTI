@@ -1,0 +1,13 @@
+{% extends "dojo_epss/base.html" %}
+{% comment %}
+DEPRECATED — see cve_records.html. Stub to avoid breaking any external
+links / bookmarks. The view raises Http404 so this normally never renders.
+{% endcomment %}
+{% load i18n %}
+{% block epss_page_title %}{% trans "EPSS CVE Detail (removed)" %}{% endblock %}
+{% block epss_page_body %}
+  <div class="alert alert-info">
+    {% trans "This page has been removed. EPSS enrichment is now finding-driven." %}
+    <a href="{% url 'dojo_epss:finding_matches' %}" class="alert-link">{% trans "View Finding Matches" %} →</a>
+  </div>
+{% endblock %}

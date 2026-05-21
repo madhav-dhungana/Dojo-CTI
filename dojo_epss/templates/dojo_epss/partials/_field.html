@@ -1,0 +1,15 @@
+{# Bootstrap-3 form field renderer matching DefectDojo's existing styling. #}
+<div class="form-group{% if field.errors %} has-error{% endif %}">
+  <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+  {% if field.field.widget.input_type == "checkbox" %}
+    <div>{{ field }}</div>
+  {% else %}
+    {{ field }}
+  {% endif %}
+  {% if field.help_text %}
+    <p class="help-block">{{ field.help_text }}</p>
+  {% endif %}
+  {% for err in field.errors %}
+    <p class="help-block">{{ err }}</p>
+  {% endfor %}
+</div>

@@ -1,0 +1,17 @@
+{% extends DOJO_EPSS_BASE_TEMPLATE|default:"base.html" %}
+{% comment %}
+Base template all dojo_epss pages extend.
+
+DefectDojo's base.html already renders both the breadcrumb (driven by
+add_breadcrumb() in our views) and the django.contrib.messages framework,
+so we don't re-render either of those here — that would cause duplicates.
+{% endcomment %}
+{% load i18n %}
+
+{% block content %}
+{{ block.super }}
+<div class="dojo-epss-shell" style="padding: 0 12px;">
+  <h3>{% block epss_page_title %}EPSS{% endblock %}</h3>
+  {% block epss_page_body %}{% endblock %}
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% comment %}
+Renders the cell content for the "EPSS Update" column on the Findings list.
+
+Display rules from spec req #12:
+  no FindingEPSSUpdate    -> "Not checked"
+  status == matched       -> "Matched: <score> / <percentile>"
+  status == updated       -> "Updated: <score> / <percentile>"
+  status == skipped       -> "Skipped"
+  status == failed        -> "Failed"
+Plus a small "log" icon link to the related EPSSUpdateLog / CVE detail
+when one is available.
+{% endcomment %}
+{% load i18n %}
+{% if fu %}
+  {% if fu.status == 'updated' %}
+    <span class="label label-success" title="{{ fu.reason|default:'' }}">
+      {% trans "Updated:" %} {{ fu.epss_score|default:"—" }} / {{ fu.epss_percentile|default:"—" }}
+    </span>
+  {% elif fu.status == 'matched' %}
+    <span class="label label-info" title="{{ fu.reason|default:'' }}">
+      {% trans "Matched:" %} {{ fu.epss_score|default:"—" }} / {{ fu.epss_percentile|default:"—" }}
+    </span>
+  {% elif fu.status == 'skipped' %}
+    <span class="label label-warning" title="{{ fu.reason|default:'' }}">{% trans "Skipped" %}</span>
+  {% elif fu.status == 'failed' %}
+    <span class="label label-danger" title="{{ fu.reason|default:'' }}">{% trans "Failed" %}</span>
+  {% else %}
+    <span class="label label-default">{% trans "Not checked" %}</span>
+  {% endif %}
+  {% if log_url %}
+    <a href="{{ log_url }}" title="{% trans 'Open EPSS update log' %}" style="margin-left: 4px;">
+      <i class="fa fa-external-link"></i>
+    </a>
+  {% endif %}
+{% else %}
+  <span class="label label-default">{% trans "Not checked" %}</span>
+{% endif %}

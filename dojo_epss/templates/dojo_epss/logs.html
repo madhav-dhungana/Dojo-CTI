@@ -1,0 +1,61 @@
+{% extends "dojo_epss/base.html" %}
+{% load i18n %}
+
+{% block epss_page_title %}{% trans "EPSS / KEV Update Logs" %}{% endblock %}
+
+{% block epss_page_body %}
+<form method="get" class="form-inline" style="margin-bottom: 12px;">
+  <label>{% trans "Action" %}</label>
+  <select name="action" class="form-control">
+    <option value="">{% trans "(any)" %}</option>
+    {% for value, label in action_choices %}
+      <option value="{{ value }}"{% if value == current_action %} selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-default">{% trans "Apply" %}</button>
+</form>
+
+<table class="table table-striped">
+  <thead><tr>
+    <th>#</th><th>{% trans "Action" %}</th><th>{% trans "Status" %}</th>
+    <th>{% trans "Started" %}</th><th>{% trans "Finished" %}</th>
+    <th>{% trans "User" %}</th>
+    <th>{% trans "EPSS CVEs" %}</th><th>{% trans "KEV" %}</th><th>{% trans "Scanned" %}</th>
+    <th>{% trans "Matched" %}</th><th>{% trans "Updated" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for r in page.object_list %}
+    <tr>
+      <td><a href="{% url 'dojo_epss:log_detail' r.pk %}">#{{ r.pk }}</a></td>
+      <td>{{ r.get_action_display }}</td>
+      <td>
+        <span class="label label-{% if r.status == 'success' %}success
+                                  {% elif r.status == 'failed' %}danger
+                                  {% elif r.status == 'partial_success' %}warning
+                                  {% else %}default{% endif %}">
+          {{ r.get_status_display }}
+        </span>
+      </td>
+      <td>{{ r.started_at }}</td>
+      <td>{{ r.finished_at|default:"—" }}</td>
+      <td>{{ r.requested_by|default:"system" }}</td>
+      <td>{% if r.action == 'kev_sync' %}—{% else %}{{ r.total_cves_fetched }}{% endif %}</td>
+      <td>
+        {% if r.action == 'kev_sync' %}
+          {{ r.total_cves_saved }} / {{ r.total_cves_fetched }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>{{ r.total_findings_scanned }}</td>
+      <td>{{ r.total_matches }}</td>
+      <td>{{ r.total_findings_updated }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="11">{% trans "No logs yet." %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "dojo_epss/partials/_pagination.html" with page=page %}
+{% endblock %}

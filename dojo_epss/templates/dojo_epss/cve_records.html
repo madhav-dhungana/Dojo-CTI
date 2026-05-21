@@ -1,0 +1,15 @@
+{% extends "dojo_epss/base.html" %}
+{% comment %}
+DEPRECATED. The CVE catalog UI was removed in favor of a finding-driven
+flow. This template is kept as a stub to avoid 500s in the rare case
+that something still looks up "dojo_epss/cve_records.html" by name. The
+view that used to render it now raises Http404.
+{% endcomment %}
+{% load i18n %}
+{% block epss_page_title %}{% trans "EPSS CVE Records (removed)" %}{% endblock %}
+{% block epss_page_body %}
+  <div class="alert alert-info">
+    {% trans "This page has been removed. EPSS data is now fetched per-Finding via the FIRST.org fetch button on the Manual Run page." %}
+    <a href="{% url 'dojo_epss:manual_run' %}" class="alert-link">{% trans "Go to Manual Run" %} →</a>
+  </div>
+{% endblock %}

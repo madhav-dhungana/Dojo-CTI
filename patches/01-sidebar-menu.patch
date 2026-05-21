@@ -1,0 +1,11 @@
+--- a/dojo/templates/base.html	2026-05-15 03:40:04.043001167 +0000
++++ b/dojo/templates/base.html	2026-05-15 03:40:52.984001190 +0000
+@@ -635,6 +635,8 @@
+                                                 {% endif %}
+                                             </ul>
+                                         </li>
++                                        {# dojo_epss: EPSS sidebar entry — purely additive #}
++                                        {% include "dojo_epss/partials/sidebar_menu.html" %}
+                                     {% endblock %}
+                                     {% block support-tab %}
+                                         <li>

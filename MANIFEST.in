@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include install-dojo-epss.sh
+recursive-include docker *
+recursive-include patches *
+recursive-include dojo_epss/templates *.html
+recursive-include dojo_epss/static *
+recursive-include dojo_epss/migrations *.py

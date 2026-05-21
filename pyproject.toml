@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dojo-epss"
+version = "0.2.0"
+description = "Continuous threat monitoring Django library for DefectDojo with EPSS, KEV, and ransomware enrichment for existing Findings."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "Madhav Dhungana" }]
+keywords = ["defectdojo", "epss", "kev", "ransomware", "vulnerability", "cve", "first.org", "cisa"]
+classifiers = [
+    "Framework :: Django",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.2",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+
+# Floor versions only — DefectDojo pins these tighter centrally.
+dependencies = [
+    "Django>=4.2",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+celery = ["celery>=5.3"]
+test = [
+    "pytest>=7",
+    "pytest-django>=4",
+    "responses>=0.24",
+]
+
+[project.urls]
+Homepage = "https://github.com/madhav-dhungana/Dojo-EPSS"
+Source = "https://github.com/madhav-dhungana/Dojo-EPSS"
+
+[tool.setuptools.packages.find]
+include = ["dojo_epss", "dojo_epss.*"]
+
+[tool.setuptools.package-data]
+dojo_epss = [
+    "templates/dojo_epss/*.html",
+    "templates/dojo_epss/partials/*.html",
+    "static/dojo_epss/*",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "dojo_epss.tests.test_settings"
+python_files = ["test_*.py"]
+testpaths = ["dojo_epss/tests"]

@@ -1,0 +1,74 @@
+{% extends "dojo_epss/base.html" %}
+{% load i18n %}
+
+{% block epss_page_title %}{% trans "EPSS / KEV Settings" %}{% endblock %}
+
+{% block epss_page_body %}
+<div class="row">
+  <form class="form-horizontal" method="post" novalidate>
+    {% csrf_token %}
+
+    {% comment %}
+      Use the package-local copy of DefectDojo's field renderer so radio
+      tooltips align with normal field tooltips on the label side.
+    {% endcomment %}
+    {% include "dojo_epss/settings_fields.html" with form=form %}
+
+    <div class="form-group">
+      <div class="col-sm-offset-2 col-sm-10">
+        <input class="btn btn-primary" type="submit" name="save_epss_settings" value="{% trans 'Save settings' %}"/>
+        <a href="{% url 'dojo_epss:dashboard' %}" class="btn btn-link">{% trans "Cancel" %}</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% comment %}
+  Progressive disclosure: the CSV base URL only matters when the operator
+  selects the daily CSV source. Hide that field row until the radio is on, and
+  re-show it whenever the source changes, so the settings page stays aligned
+  with the Manual Run actions.
+{% endcomment %}
+<script>
+  (function() {
+    var kevDefaults = {
+      json: 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
+      csv: 'https://www.cisa.gov/sites/default/files/csv/known_exploited_vulnerabilities.csv'
+    };
+
+    function syncCsvUrlVisibility() {
+      var $toggle = $('input[name="fetch_source"][value="csv"]');
+      var $csvField = $('#id_csv_base_url');
+      if (!$toggle.length || !$csvField.length) {
+        return;
+      }
+      var $row = $csvField.closest('.form-group');
+      if ($toggle.is(':checked')) {
+        $row.show();
+      } else {
+        $row.hide();
+      }
+    }
+
+    function syncKevSourceUrl() {
+      var selected = $('input[name="kev_source_type"]:checked').val();
+      var $url = $('#id_kev_source_url');
+      if (!selected || !$url.length) {
+        return;
+      }
+      var current = $url.val();
+      var isKnownDefault = !current || current === kevDefaults.json || current === kevDefaults.csv;
+      if (isKnownDefault) {
+        $url.val(kevDefaults[selected]);
+      }
+    }
+
+    $(function() {
+      syncCsvUrlVisibility();
+      $('input[name="fetch_source"]').on('change', syncCsvUrlVisibility);
+      syncKevSourceUrl();
+      $('input[name="kev_source_type"]').on('change', syncKevSourceUrl);
+    });
+  })();
+</script>
+{% endblock %}
