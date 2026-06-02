@@ -1,6 +1,6 @@
 """Models for dojo_epss.
 
-Six tables, all owned by this app's app_label:
+Seven tables, all owned by this app's app_label:
 
 * ``EPSSSettings``       — singleton, admin-editable runtime config.
 * ``EPSSCVERecord``      — fetched EPSS rows; UNIQUE(cve_id, epss_date, source).
@@ -9,6 +9,9 @@ Six tables, all owned by this app's app_label:
                             existing ``epss_score`` / ``epss_percentile`` fields.
 * ``FindingKEVUpdate``   — OneToOne back to ``dojo.Finding``; tracks per-Finding
                             KEV/ransomware state discovered by this library.
+* ``FindingVulnCheckUpdate`` — OneToOne back to ``dojo.Finding``; tracks
+                            VulnCheck POC / ITW state discovered by this
+                            library without changing core Finding fields.
 * ``EPSSUpdateLog``      — one row per fetch / compare / download / update action.
 * ``EPSSDownloadBatch``  — one row per full-CSV download attempt; links to a log.
 
@@ -63,6 +66,7 @@ class EPSSAction(models.TextChoices):
     AUTO_UPDATE = "auto_update", _("Auto-update Findings")
     MANUAL_UPDATE = "manual_update", _("Manual update")
     KEV_SYNC = "kev_sync", _("KEV sync")
+    VULNCHECK_SYNC = "vulncheck_sync", _("VulnCheck POC / ITW sync")
 
 
 class EPSSLogStatus(models.TextChoices):
@@ -245,7 +249,7 @@ class EPSSSettings(models.Model):
     )
     schedule_interval_hours = models.PositiveSmallIntegerField(
         default=24,
-        choices=((12, _("Every 12 hours")), (24, _("Every 24 hours"))),
+        validators=[MinValueValidator(1), MaxValueValidator(8760)],
         help_text=_("EPSS scheduled sync interval used by the dispatcher."),
     )
     epss_last_scheduled_run_at = models.DateTimeField(
@@ -293,13 +297,48 @@ class EPSSSettings(models.Model):
     )
     kev_schedule_interval_hours = models.PositiveSmallIntegerField(
         default=24,
-        choices=((12, _("Every 12 hours")), (24, _("Every 24 hours"))),
+        validators=[MinValueValidator(1), MaxValueValidator(8760)],
         help_text=_("KEV scheduled sync interval used by the dispatcher."),
     )
     kev_last_scheduled_run_at = models.DateTimeField(
         null=True,
         blank=True,
         help_text=_("Last time the dispatcher attempted a scheduled KEV sync."),
+    )
+
+    # ---- VulnCheck POC / exploitation-in-the-wild -----------------------
+    vulncheck_enabled = models.BooleanField(
+        default=False,
+        help_text=_("Enable VulnCheck POC and exploitation-in-the-wild checks."),
+    )
+    vulncheck_api_base_url = models.URLField(
+        max_length=512,
+        default=app_settings.DEFAULT_VULNCHECK_API_BASE_URL,
+        help_text=_("VulnCheck API v3 base URL."),
+    )
+    vulncheck_index = models.CharField(
+        max_length=128,
+        default=app_settings.DEFAULT_VULNCHECK_INDEX,
+        help_text=_("VulnCheck index to query. The default exploits index supports POC and ITW signals."),
+    )
+    vulncheck_api_token_encrypted = models.TextField(
+        blank=True,
+        default="",
+        help_text=_("Encrypted VulnCheck API token. The plaintext token is never displayed."),
+    )
+    vulncheck_schedule_enabled = models.BooleanField(
+        default=False,
+        help_text=_("Gate for scheduled VulnCheck POC / ITW syncs. Manual actions still run."),
+    )
+    vulncheck_schedule_interval_hours = models.PositiveSmallIntegerField(
+        default=24,
+        validators=[MinValueValidator(1), MaxValueValidator(8760)],
+        help_text=_("VulnCheck scheduled sync interval used by the dispatcher."),
+    )
+    vulncheck_last_scheduled_run_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("Last time the dispatcher attempted a scheduled VulnCheck sync."),
     )
     # ---- HTTP knobs -------------------------------------------------------
     http_timeout_secs = models.PositiveIntegerField(
@@ -387,6 +426,33 @@ class EPSSSettings(models.Model):
     # This function checks EPSS source state. This function needs source toggles.
     def has_valid_fetch_source(self) -> bool:
         return self.active_fetch_source() in {"firstorg", "csv"}
+
+    # This function checks token presence. This function needs settings or env.
+    def has_vulncheck_token_configured(self) -> bool:
+        return bool(
+            app_settings.secret_override("VULNCHECK_API_TOKEN")
+            or self.vulncheck_api_token_encrypted
+        )
+
+    # This function stores a token. This function needs DefectDojo crypto.
+    def set_vulncheck_api_token(self, token: str) -> None:
+        from .services.secrets import encrypt_secret
+
+        token = (token or "").strip()
+        if token:
+            self.vulncheck_api_token_encrypted = encrypt_secret(token)
+
+    # This function returns the token for sync. This function needs DefectDojo crypto.
+    def get_vulncheck_api_token(self) -> str:
+        override = app_settings.secret_override("VULNCHECK_API_TOKEN")
+        if override:
+            return override
+        if not self.vulncheck_api_token_encrypted:
+            return ""
+
+        from .services.secrets import decrypt_secret
+
+        return decrypt_secret(self.vulncheck_api_token_encrypted)
 
     # This function builds the CSV URL. This function needs an optional score date.
     def csv_url_for(self, score_date=None) -> str:
@@ -575,7 +641,69 @@ class FindingKEVUpdate(models.Model):
 
 
 # ===========================================================================
-# 5) EPSSUpdateLog — audit row for every action
+# 5) FindingVulnCheckUpdate — OneToOne to dojo.Finding
+# ===========================================================================
+class FindingVulnCheckUpdate(models.Model):
+    finding = models.OneToOneField(
+        f"{app_settings.DOJO_APP_LABEL}.Finding",
+        on_delete=models.CASCADE,
+        related_name="vulncheck_update",
+    )
+
+    cve_id = models.CharField(max_length=32, db_index=True, blank=True, default="")
+    public_exploit_found = models.BooleanField(default=False)
+    exploit_in_the_wild = models.BooleanField(default=False)
+    commercial_exploit_found = models.BooleanField(default=False)
+    weaponized_exploit_found = models.BooleanField(default=False)
+    reported_exploited_by_threat_actors = models.BooleanField(default=False)
+    reported_exploited_by_ransomware = models.BooleanField(default=False)
+    reported_exploited_by_botnets = models.BooleanField(default=False)
+    reported_exploited_by_honeypot_service = models.BooleanField(default=False)
+    reported_exploited_by_vulncheck_canaries = models.BooleanField(default=False)
+    in_cisa_kev = models.BooleanField(default=False)
+    in_vulncheck_kev = models.BooleanField(default=False)
+
+    max_exploit_maturity = models.CharField(max_length=64, blank=True, default="")
+    poc_found_date = models.DateField(null=True, blank=True)
+    itw_found_date = models.DateField(null=True, blank=True)
+    exploit_count = models.PositiveIntegerField(default=0)
+    source_index = models.CharField(max_length=128, blank=True, default="")
+    source_links = models.JSONField(default=list, blank=True)
+    raw_data = models.JSONField(default=dict, blank=True)
+
+    status = models.CharField(
+        max_length=16,
+        choices=EPSSStatus.choices,
+        default=EPSSStatus.NOT_CHECKED,
+    )
+    reason = models.TextField(blank=True, default="")
+
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_updated_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("Finding VulnCheck update")
+        verbose_name_plural = _("Finding VulnCheck updates")
+        indexes = [
+            models.Index(fields=["status"], name="vc_fu_status_idx"),
+            models.Index(fields=["cve_id"], name="vc_fu_cve_idx"),
+            models.Index(fields=["public_exploit_found"], name="vc_fu_poc_idx"),
+            models.Index(fields=["exploit_in_the_wild"], name="vc_fu_itw_idx"),
+            models.Index(fields=["-last_updated_at"], name="vc_fu_last_upd_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"FindingVulnCheckUpdate finding={self.finding_id} "
+            f"cve={self.cve_id} status={self.status}"
+        )
+
+
+# ===========================================================================
+# 6) EPSSUpdateLog — audit row for every action
 # ===========================================================================
 class EPSSUpdateLog(models.Model):
     action = models.CharField(max_length=32, choices=EPSSAction.choices, db_index=True)
@@ -635,7 +763,7 @@ class EPSSUpdateLog(models.Model):
 
 
 # ===========================================================================
-# 6) EPSSDownloadBatch — one row per CSV download
+# 7) EPSSDownloadBatch — one row per CSV download
 # ===========================================================================
 class EPSSDownloadBatch(models.Model):
     epss_date = models.DateField(db_index=True)

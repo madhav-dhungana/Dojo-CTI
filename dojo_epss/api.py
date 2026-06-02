@@ -8,7 +8,7 @@ from rest_framework import generics, serializers
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import EPSSStatus, FindingEPSSUpdate, FindingKEVUpdate
+from .models import EPSSStatus, FindingEPSSUpdate, FindingKEVUpdate, FindingVulnCheckUpdate
 
 
 class DojoEpssDashboardPermission(BasePermission):
@@ -40,6 +40,31 @@ class FindingKEVSnapshotSerializer(serializers.Serializer):
     last_updated_at = serializers.DateTimeField(allow_null=True)
 
 
+class FindingVulnCheckSnapshotSerializer(serializers.Serializer):
+    """VulnCheck POC and ITW data attached to one finding match."""
+
+    cve_id = serializers.CharField(allow_blank=True)
+    public_exploit_found = serializers.BooleanField()
+    exploit_in_the_wild = serializers.BooleanField()
+    weaponized_exploit_found = serializers.BooleanField()
+    commercial_exploit_found = serializers.BooleanField()
+    reported_exploited_by_threat_actors = serializers.BooleanField()
+    reported_exploited_by_ransomware = serializers.BooleanField()
+    reported_exploited_by_botnets = serializers.BooleanField()
+    in_cisa_kev = serializers.BooleanField()
+    in_vulncheck_kev = serializers.BooleanField()
+    max_exploit_maturity = serializers.CharField(allow_blank=True)
+    poc_found_date = serializers.DateField(allow_null=True)
+    itw_found_date = serializers.DateField(allow_null=True)
+    exploit_count = serializers.IntegerField()
+    source_index = serializers.CharField(allow_blank=True)
+    source_links = serializers.JSONField()
+    status = serializers.CharField()
+    reason = serializers.CharField(allow_blank=True)
+    last_checked_at = serializers.DateTimeField(allow_null=True)
+    last_updated_at = serializers.DateTimeField(allow_null=True)
+
+
 class FindingEPSSMatchSerializer(serializers.ModelSerializer):
     """EPSS and KEV match data for one DefectDojo Finding."""
 
@@ -47,6 +72,7 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
     finding_title = serializers.SerializerMethodField()
     source_record_id = serializers.IntegerField(read_only=True)
     kev = serializers.SerializerMethodField()
+    vulncheck = serializers.SerializerMethodField()
 
     class Meta:
         model = FindingEPSSUpdate
@@ -62,6 +88,7 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
             "reason",
             "source_record_id",
             "kev",
+            "vulncheck",
             "last_checked_at",
             "last_updated_at",
             "created_at",
@@ -80,13 +107,20 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
             return None
         return FindingKEVSnapshotSerializer(kev).data
 
+    # This function returns VulnCheck data. This function needs a match row.
+    def get_vulncheck(self, obj) -> dict | None:
+        snapshot = getattr(obj, "vulncheck_snapshot", None)
+        if snapshot is None:
+            return None
+        return FindingVulnCheckSnapshotSerializer(snapshot).data
+
 
 @extend_schema(
     tags=["dojo_epss"],
     summary="List EPSS finding matches",
     description=(
         "Returns Finding EPSS match rows created by the dojo_epss matcher. "
-        "Each row includes the related KEV snapshot when one exists."
+        "Each row includes related KEV and VulnCheck snapshots when they exist."
     ),
     parameters=[
         OpenApiParameter(
@@ -124,6 +158,20 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
             required=False,
             description="When true, return only rows with ransomware usage data.",
         ),
+        OpenApiParameter(
+            "poc",
+            OpenApiTypes.BOOL,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="When true, return only rows with VulnCheck public POC data.",
+        ),
+        OpenApiParameter(
+            "itw",
+            OpenApiTypes.BOOL,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="When true, return only rows with VulnCheck exploitation-in-the-wild data.",
+        ),
     ],
     responses={200: FindingEPSSMatchSerializer(many=True)},
 )
@@ -157,6 +205,10 @@ class FindingEPSSMatchListAPIView(generics.ListAPIView):
             qs = qs.filter(finding_id__in=_kev_finding_ids(known=True))
         if _truthy_query(self.request.query_params.get("ransomware")):
             qs = qs.filter(finding_id__in=_kev_finding_ids(ransomware=True))
+        if _truthy_query(self.request.query_params.get("poc")):
+            qs = qs.filter(finding_id__in=_vulncheck_finding_ids(poc=True))
+        if _truthy_query(self.request.query_params.get("itw")):
+            qs = qs.filter(finding_id__in=_vulncheck_finding_ids(itw=True))
         return qs
 
     # This function lists match rows. This function needs a request.
@@ -180,8 +232,13 @@ class FindingEPSSMatchListAPIView(generics.ListAPIView):
             row.finding_id: row
             for row in FindingKEVUpdate.objects.filter(finding_id__in=ids)
         }
+        vulncheck_by_finding = {
+            row.finding_id: row
+            for row in FindingVulnCheckUpdate.objects.filter(finding_id__in=ids)
+        }
         for row in rows:
             row.kev_snapshot = kev_by_finding.get(row.finding_id)
+            row.vulncheck_snapshot = vulncheck_by_finding.get(row.finding_id)
 
 
 # This function reads boolean query values. This function needs a raw value.
@@ -196,4 +253,14 @@ def _kev_finding_ids(*, known: bool = False, ransomware: bool = False):
         qs = qs.filter(known_exploited=True)
     if ransomware:
         qs = qs.filter(ransomware_used=True)
+    return qs.values_list("finding_id", flat=True)
+
+
+# This function finds VulnCheck Finding ids. This function needs a signal filter.
+def _vulncheck_finding_ids(*, poc: bool = False, itw: bool = False):
+    qs = FindingVulnCheckUpdate.objects.all()
+    if poc:
+        qs = qs.filter(public_exploit_found=True)
+    if itw:
+        qs = qs.filter(exploit_in_the_wild=True)
     return qs.values_list("finding_id", flat=True)

@@ -35,6 +35,7 @@ from .services.finding_updater import auto_update
 from .services.http import EpssFetchError
 from .services.kev_updater import sync_kev_findings
 from .services.scheduler import run_full_sync
+from .services.vulncheck_updater import sync_vulncheck_findings
 
 log = logging.getLogger("dojo_epss.tasks")
 
@@ -113,6 +114,21 @@ def _kev_sync_lock():
     finally:
         if acquired:
             cache.delete(app_settings.KEV_SYNC_LOCK_KEY)
+
+
+# This function prevents overlapping VulnCheck syncs. This function needs Django cache.
+@contextmanager
+def _vulncheck_sync_lock():
+    acquired = cache.add(
+        app_settings.VULNCHECK_SYNC_LOCK_KEY,
+        "1",
+        app_settings.VULNCHECK_SYNC_LOCK_TTL_SECS,
+    )
+    try:
+        yield bool(acquired)
+    finally:
+        if acquired:
+            cache.delete(app_settings.VULNCHECK_SYNC_LOCK_KEY)
 
 
 # This function prevents overlapping scheduler ticks. This function needs Django cache.
@@ -361,6 +377,12 @@ def kev_full_sync_task(self, *, user_id: int | None = None):  # noqa: ARG001
     return _run_kev_full_sync(user_id=user_id, enforce_schedule_gate=(user_id is None))
 
 
+# This task runs the full VulnCheck sync. This task needs VulnCheck settings enabled.
+@epss_task(name="dojo_epss.vulncheck_full_sync_task")
+def vulncheck_full_sync_task(self, *, user_id: int | None = None):  # noqa: ARG001
+    return _run_vulncheck_full_sync(user_id=user_id, enforce_schedule_gate=(user_id is None))
+
+
 # This function performs KEV sync work. This function needs settings and a lock.
 def _run_kev_full_sync(
     *,
@@ -415,17 +437,69 @@ def _run_kev_full_sync(
     return log_row.id
 
 
-# This task checks scheduled EPSS and KEV work. This task needs Celery beat.
+# This function performs VulnCheck sync work. This function needs settings and a lock.
+def _run_vulncheck_full_sync(
+    *,
+    user_id: int | None = None,
+    enforce_schedule_gate: bool = True,
+) -> int:
+    s = EPSSSettings.load()
+    log_row = _start_log(
+        EPSSAction.VULNCHECK_SYNC,
+        {
+            "api_base_url": s.vulncheck_api_base_url,
+            "source_index": s.vulncheck_index,
+            "positive_updates_only": True,
+            "token_configured": s.has_vulncheck_token_configured(),
+        },
+        user_id=user_id,
+    )
+
+    if not s.enabled:
+        log_row.mark_finished(EPSSLogStatus.SKIPPED, error="EPSS/CTI module disabled (settings.enabled=False).")
+        return log_row.id
+    if not s.vulncheck_enabled:
+        log_row.mark_finished(EPSSLogStatus.SKIPPED, error="VulnCheck checks disabled (settings.vulncheck_enabled=False).")
+        return log_row.id
+    if not s.has_vulncheck_token_configured():
+        log_row.mark_finished(EPSSLogStatus.SKIPPED, error="VulnCheck API token is not configured.")
+        return log_row.id
+
+    if enforce_schedule_gate and not s.vulncheck_schedule_enabled:
+        log_row.mark_finished(
+            EPSSLogStatus.SKIPPED,
+            error="Scheduled VulnCheck runs disabled (settings.vulncheck_schedule_enabled=False). Manual runs still work.",
+        )
+        return log_row.id
+
+    with _vulncheck_sync_lock() as acquired:
+        if not acquired:
+            log_row.mark_finished(EPSSLogStatus.SKIPPED, error="another VulnCheck sync is already running (lock held)")
+            return log_row.id
+
+        try:
+            stats = sync_vulncheck_findings(settings=s, update_log=log_row)
+            outcome = EPSSLogStatus.SUCCESS if stats["failed"] == 0 else EPSSLogStatus.PARTIAL_SUCCESS
+            log_row.mark_finished(outcome)
+        except EpssFetchError as exc:
+            log_row.mark_finished(EPSSLogStatus.FAILED, error=str(exc))
+        except Exception as exc:  # pylint: disable=broad-except
+            log.exception("VulnCheck full sync failed")
+            log_row.mark_finished(EPSSLogStatus.FAILED, error=f"unexpected: {exc!s}")
+    return log_row.id
+
+
+# This task checks scheduled EPSS, KEV, and VulnCheck work. This task needs Celery beat.
 @epss_task(name="dojo_epss.schedule_dispatcher_task")
 def schedule_dispatcher_task(self):  # noqa: ARG001
     """Hourly lightweight scheduler.
 
     Celery beat calls this static task. The task reads EPSSSettings and only
-    runs EPSS/KEV syncs when their UI-controlled 12h/24h interval is due.
+    runs EPSS/KEV/VulnCheck syncs when their UI-controlled interval is due.
     Not-due ticks do not create EPSSUpdateLog rows.
     """
     s = EPSSSettings.load()
-    result = {"epss": "not_due", "kev": "not_due"}
+    result = {"epss": "not_due", "kev": "not_due", "vulncheck": "not_due"}
 
     if not s.enabled:
         return {"module": "disabled", **result}
@@ -451,6 +525,14 @@ def schedule_dispatcher_task(self):  # noqa: ARG001
             EPSSSettings.objects.filter(pk=s.pk).update(kev_last_scheduled_run_at=now)
             result["kev"] = _run_kev_full_sync(user_id=None, enforce_schedule_gate=True)
 
+        if s.vulncheck_enabled and s.vulncheck_schedule_enabled and _interval_due(
+            s.vulncheck_last_scheduled_run_at,
+            s.vulncheck_schedule_interval_hours,
+            now,
+        ):
+            EPSSSettings.objects.filter(pk=s.pk).update(vulncheck_last_scheduled_run_at=now)
+            result["vulncheck"] = _run_vulncheck_full_sync(user_id=None, enforce_schedule_gate=True)
+
     return result
 
 
@@ -460,7 +542,7 @@ def _interval_due(last_run, interval_hours, now) -> bool:
         hours = int(interval_hours)
     except (TypeError, ValueError):
         hours = 24
-    if hours not in {12, 24}:
+    if hours < 1:
         hours = 24
     if last_run is None:
         return True
@@ -469,8 +551,8 @@ def _interval_due(last_run, interval_hours, now) -> bool:
 
 # Suggested Celery beat entry to add to local_settings.py / settings.dist.py:
 # the installer generates this static hourly dispatcher. The dispatcher reads
-# EPSSSettings.schedule_interval_hours / kev_schedule_interval_hours and only
-# runs EPSS/KEV when the UI-controlled interval is due.
+# EPSSSettings interval fields and only runs each sync when its UI-controlled
+# hour interval is due.
 #
 # from datetime import timedelta
 # CELERY_BEAT_SCHEDULE = {

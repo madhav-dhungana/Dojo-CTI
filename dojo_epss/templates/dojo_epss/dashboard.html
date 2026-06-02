@@ -1,7 +1,7 @@
 {% extends "dojo_epss/base.html" %}
 {% load i18n %}
 
-{% block epss_page_title %}{% trans "EPSS / KEV Dashboard" %}{% endblock %}
+{% block epss_page_title %}{% trans "EPSS / KEV / VulnCheck Dashboard" %}{% endblock %}
 
 {% block epss_page_body %}
 <div class="row">
@@ -15,6 +15,8 @@
           <dd>{% if settings.enabled %}<span class="label label-success">{% trans "enabled" %}</span>{% else %}<span class="label label-default">{% trans "disabled" %}</span>{% endif %}</dd>
           <dt>{% trans "KEV checks" %}</dt>
           <dd>{% if settings.kev_enabled %}<span class="label label-success">{% trans "enabled" %}</span>{% else %}<span class="label label-default">{% trans "disabled" %}</span>{% endif %}</dd>
+          <dt>{% trans "VulnCheck checks" %}</dt>
+          <dd>{% if settings.vulncheck_enabled %}<span class="label label-success">{% trans "enabled" %}</span>{% else %}<span class="label label-default">{% trans "disabled" %}</span>{% endif %}</dd>
           <dt>{% trans "Last fetch" %}</dt>
           <dd>{% if last_fetch %}{{ last_fetch.started_at }} ({{ last_fetch.get_action_display }}){% else %}—{% endif %}</dd>
           <dt>{% trans "Last compare" %}</dt>
@@ -23,12 +25,16 @@
           <dd>{% if last_update %}{{ last_update.started_at }} ({{ last_update.total_findings_updated }} updated){% else %}—{% endif %}</dd>
           <dt>{% trans "Last KEV sync" %}</dt>
           <dd>{% if last_kev %}{{ last_kev.started_at }} ({{ last_kev.total_findings_updated }} updated){% else %}—{% endif %}</dd>
+          <dt>{% trans "Last VulnCheck sync" %}</dt>
+          <dd>{% if last_vulncheck %}{{ last_vulncheck.started_at }} ({{ last_vulncheck.total_matches }} matched){% else %}—{% endif %}</dd>
           <dt>{% trans "Findings with EPSS match" %}</dt><dd>{{ counts.matches }}</dd>
           <dt>{% trans "Findings updated" %}</dt><dd>{{ counts.updated }}</dd>
           <dt>{% trans "Findings skipped" %}</dt><dd>{{ counts.skipped }}</dd>
           <dt>{% trans "Failed updates" %}</dt><dd>{{ counts.failed }}</dd>
           <dt>{% trans "Findings with KEV" %}</dt><dd>{{ kev_counts.matches }}</dd>
           <dt>{% trans "Used in ransomware" %}</dt><dd>{{ kev_counts.ransomware }}</dd>
+          <dt>{% trans "Findings with POC" %}</dt><dd>{{ vulncheck_counts.poc }}</dd>
+          <dt>{% trans "Findings with ITW" %}</dt><dd>{{ vulncheck_counts.itw }}</dd>
         </dl>
       </div>
     </div>
@@ -38,7 +44,8 @@
       <table class="table table-striped">
         <thead><tr>
           <th>{% trans "Finding" %}</th><th>{% trans "CVE" %}</th>
-          <th>{% trans "EPSS" %}</th><th>{% trans "KEV" %}</th><th>{% trans "Status" %}</th>
+          <th>{% trans "EPSS" %}</th><th>{% trans "KEV" %}</th>
+          <th>{% trans "POC" %}</th><th>{% trans "ITW" %}</th><th>{% trans "Status" %}</th>
         </tr></thead>
         <tbody>
           {% for fu in top_matches %}
@@ -61,10 +68,26 @@
                 —
               {% endif %}
             </td>
+            <td>
+              {% if fu.vulncheck_snapshot.public_exploit_found %}
+                <span class="label label-warning">{% trans "POC" %}</span>
+                {% if fu.vulncheck_snapshot.poc_found_date %}{{ fu.vulncheck_snapshot.poc_found_date }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>
+              {% if fu.vulncheck_snapshot.exploit_in_the_wild %}
+                <span class="label label-danger">{% trans "ITW" %}</span>
+                {% if fu.vulncheck_snapshot.itw_found_date %}{{ fu.vulncheck_snapshot.itw_found_date }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
             <td>{{ fu.get_status_display }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="5">{% trans "No matched findings yet. Run a FIRST.org fetch to start." %}</td></tr>
+          <tr><td colspan="7">{% trans "No matched findings yet. Run a FIRST.org fetch to start." %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -75,7 +98,7 @@
       <table class="table table-striped">
         <thead><tr>
           <th>#</th><th>{% trans "Action" %}</th><th>{% trans "Status" %}</th>
-          <th>{% trans "Started" %}</th><th>{% trans "EPSS CVEs" %}</th><th>{% trans "KEV" %}</th>
+          <th>{% trans "Started" %}</th><th>{% trans "EPSS CVEs" %}</th><th>{% trans "KEV" %}</th><th>{% trans "VulnCheck" %}</th>
           <th>{% trans "Matched" %}</th><th>{% trans "Updated" %}</th>
         </tr></thead>
         <tbody>
@@ -85,13 +108,14 @@
             <td>{{ r.get_action_display }}</td>
             <td>{{ r.get_status_display }}</td>
             <td>{{ r.started_at }}</td>
-            <td>{% if r.action == 'kev_sync' %}—{% else %}{{ r.total_cves_fetched }}{% endif %}</td>
+            <td>{% if r.action == 'kev_sync' or r.action == 'vulncheck_sync' %}—{% else %}{{ r.total_cves_fetched }}{% endif %}</td>
             <td>{% if r.action == 'kev_sync' %}{{ r.total_cves_saved }} / {{ r.total_cves_fetched }}{% else %}—{% endif %}</td>
+            <td>{% if r.action == 'vulncheck_sync' %}{{ r.total_cves_saved }} / {{ r.total_cves_fetched }}{% else %}—{% endif %}</td>
             <td>{{ r.total_matches }}</td>
             <td>{{ r.total_findings_updated }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="8">{% trans "No runs yet." %}</td></tr>
+          <tr><td colspan="9">{% trans "No runs yet." %}</td></tr>
           {% endfor %}
         </tbody>
       </table>

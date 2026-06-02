@@ -20,6 +20,9 @@
       {% if log.action == 'kev_sync' %}
         <dt>{% trans "KEV feed rows" %}</dt><dd>{{ log.total_cves_fetched }}</dd>
         <dt>{% trans "KEV CVEs matched" %}</dt><dd>{{ log.total_cves_saved }}</dd>
+      {% elif log.action == 'vulncheck_sync' %}
+        <dt>{% trans "VulnCheck CVEs checked" %}</dt><dd>{{ log.total_cves_fetched }}</dd>
+        <dt>{% trans "VulnCheck CVEs matched" %}</dt><dd>{{ log.total_cves_saved }}</dd>
       {% else %}
         <dt>{% trans "CVEs fetched" %}</dt><dd>{{ log.total_cves_fetched }}</dd>
         <dt>{% trans "CVEs saved" %}</dt><dd>{{ log.total_cves_saved }}</dd>

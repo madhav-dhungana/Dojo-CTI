@@ -16,6 +16,9 @@ def _settings_form_data(source: str) -> dict:
         "kev_source_type": "json",
         "kev_source_url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
         "kev_update_findings_enabled": "on",
+        "vulncheck_api_base_url": "https://api.vulncheck.com/v3",
+        "vulncheck_index": "exploits",
+        "vulncheck_api_token": "",
         "api_base_url": "https://api.first.org/data/v1/epss",
         "csv_base_url": "https://epss.empiricalsecurity.com",
         "result_limit": "100",
@@ -27,6 +30,7 @@ def _settings_form_data(source: str) -> dict:
         "update_max_percentile": "1.000000",
         "epss_schedule_interval": "0",
         "kev_schedule_interval": "0",
+        "vulncheck_schedule_interval": "0",
         "http_timeout_secs": "30",
         "http_retries": "3",
     }
@@ -64,12 +68,15 @@ def test_settings_form_switches_cisa_kev_default_url_for_csv(settings_row):
 @pytest.mark.django_db
 def test_settings_form_saves_ui_schedule_intervals(settings_row):
     data = _settings_form_data("firstorg")
-    data["epss_schedule_interval"] = "12"
-    data["kev_schedule_interval"] = "24"
+    data["epss_schedule_interval"] = "18"
+    data["kev_schedule_interval"] = "36"
+    data["vulncheck_schedule_interval"] = "72"
     form = EPSSSettingsForm(data, instance=settings_row)
     assert form.is_valid(), form.errors
     obj = form.save()
     assert obj.schedule_enabled is True
-    assert obj.schedule_interval_hours == 12
+    assert obj.schedule_interval_hours == 18
     assert obj.kev_schedule_enabled is True
-    assert obj.kev_schedule_interval_hours == 24
+    assert obj.kev_schedule_interval_hours == 36
+    assert obj.vulncheck_schedule_enabled is True
+    assert obj.vulncheck_schedule_interval_hours == 72

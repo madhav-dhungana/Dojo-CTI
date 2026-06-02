@@ -33,10 +33,10 @@ def test_full_sync_lock_prevents_overlap():
         assert got_after is True
 
 
-def test_interval_due_supports_12_and_24_hours():
+def test_interval_due_supports_variable_hours():
     now = timezone.now()
     assert _interval_due(None, 12, now) is True
-    assert _interval_due(now - _dt.timedelta(hours=11, minutes=59), 12, now) is False
-    assert _interval_due(now - _dt.timedelta(hours=12), 12, now) is True
-    assert _interval_due(now - _dt.timedelta(hours=23, minutes=59), 24, now) is False
-    assert _interval_due(now - _dt.timedelta(hours=24), 24, now) is True
+    assert _interval_due(now - _dt.timedelta(hours=17, minutes=59), 18, now) is False
+    assert _interval_due(now - _dt.timedelta(hours=18), 18, now) is True
+    assert _interval_due(now - _dt.timedelta(hours=71, minutes=59), 72, now) is False
+    assert _interval_due(now - _dt.timedelta(hours=72), 72, now) is True

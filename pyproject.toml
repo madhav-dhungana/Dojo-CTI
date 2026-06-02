@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dojo-epss"
 version = "0.2.0"
-description = "Continuous threat monitoring Django library for DefectDojo with EPSS, KEV, and ransomware enrichment for existing Findings."
+description = "Continuous threat monitoring Django library for DefectDojo with EPSS, KEV, ransomware, POC, and ITW enrichment for existing Findings."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "BSD-3-Clause" }
 authors = [{ name = "Madhav Dhungana" }]
-keywords = ["defectdojo", "epss", "kev", "ransomware", "vulnerability", "cve", "first.org", "cisa"]
+keywords = ["defectdojo", "epss", "kev", "ransomware", "vulncheck", "poc", "itw", "vulnerability", "cve", "first.org", "cisa"]
 classifiers = [
     "Framework :: Django",
     "Framework :: Django :: 4.2",

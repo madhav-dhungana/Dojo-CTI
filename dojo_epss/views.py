@@ -32,6 +32,7 @@ from .models import (
     EPSSUpdateLog,
     FindingEPSSUpdate,
     FindingKEVUpdate,
+    FindingVulnCheckUpdate,
 )
 from .permissions import superuser_required, view_or_perm
 from .services.first_client import FirstEPSSClient
@@ -94,6 +95,10 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         EPSSUpdateLog.objects.filter(action=EPSSAction.KEV_SYNC)
         .order_by("-started_at").first()
     )
+    last_vulncheck = (
+        EPSSUpdateLog.objects.filter(action=EPSSAction.VULNCHECK_SYNC)
+        .order_by("-started_at").first()
+    )
 
     counts = {
         "matches": FindingEPSSUpdate.objects.exclude(status=EPSSStatus.NOT_CHECKED).count(),
@@ -107,6 +112,12 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         "updated": FindingKEVUpdate.objects.filter(status=EPSSStatus.UPDATED).count(),
         "failed": FindingKEVUpdate.objects.filter(status=EPSSStatus.FAILED).count(),
     }
+    vulncheck_counts = {
+        "poc": FindingVulnCheckUpdate.objects.filter(public_exploit_found=True).count(),
+        "itw": FindingVulnCheckUpdate.objects.filter(exploit_in_the_wild=True).count(),
+        "weaponized": FindingVulnCheckUpdate.objects.filter(weaponized_exploit_found=True).count(),
+        "failed": FindingVulnCheckUpdate.objects.filter(status=EPSSStatus.FAILED).count(),
+    }
     top_matches = list(
         FindingEPSSUpdate.objects.exclude(status=EPSSStatus.NOT_CHECKED)
         .select_related("finding").order_by("-epss_score")[:10]
@@ -119,6 +130,14 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     }
     for fu in top_matches:
         fu.kev_snapshot = kev_by_finding.get(fu.finding_id)
+    vulncheck_by_finding = {
+        row.finding_id: row
+        for row in FindingVulnCheckUpdate.objects.filter(
+            finding_id__in=[fu.finding_id for fu in top_matches],
+        )
+    }
+    for fu in top_matches:
+        fu.vulncheck_snapshot = vulncheck_by_finding.get(fu.finding_id)
 
     return render(request, "dojo_epss/dashboard.html", {
         "settings": s,
@@ -127,8 +146,10 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         "last_compare": last_compare,
         "last_update": last_update,
         "last_kev": last_kev,
+        "last_vulncheck": last_vulncheck,
         "counts": counts,
         "kev_counts": kev_counts,
+        "vulncheck_counts": vulncheck_counts,
         "top_matches": top_matches,
     })
 
@@ -188,6 +209,14 @@ def finding_matches(request: HttpRequest) -> HttpResponse:
     }
     for fu in page.object_list:
         fu.kev_snapshot = kev_by_finding.get(fu.finding_id)
+    vulncheck_by_finding = {
+        row.finding_id: row
+        for row in FindingVulnCheckUpdate.objects.filter(
+            finding_id__in=[fu.finding_id for fu in page.object_list],
+        )
+    }
+    for fu in page.object_list:
+        fu.vulncheck_snapshot = vulncheck_by_finding.get(fu.finding_id)
 
     return render(request, "dojo_epss/finding_matches.html", {
         "page": page,
@@ -418,6 +447,32 @@ def _do_kev_sync(request: HttpRequest) -> HttpResponse:
         request,
         f"KEV {source_label} sync triggered. Findings are updated positively only; "
         "existing KEV/ransomware Yes values and KEV dates are not reset.",
+    )
+    return HttpResponseRedirect(reverse("dojo_epss:logs"))
+
+
+# This action starts VulnCheck sync. This action needs a superuser POST.
+@require_POST
+@superuser_required
+def action_vulncheck_sync(request: HttpRequest) -> HttpResponse:
+    return _safe_action("VulnCheck sync", "dojo_epss:logs", _do_vulncheck_sync)(request)
+
+
+# This function runs VulnCheck sync checks. This function needs token settings.
+def _do_vulncheck_sync(request: HttpRequest) -> HttpResponse:
+    s = EPSSSettings.load()
+    if not s.vulncheck_enabled:
+        messages.warning(request, "VulnCheck checks are disabled in EPSS Settings.")
+        return HttpResponseRedirect(reverse("dojo_epss:manual_run"))
+    if not s.has_vulncheck_token_configured():
+        messages.warning(request, "VulnCheck API token is not configured in EPSS Settings or environment.")
+        return HttpResponseRedirect(reverse("dojo_epss:manual_run"))
+
+    _enqueue_or_run(epss_tasks.vulncheck_full_sync_task, user_id=request.user.id)
+    messages.info(
+        request,
+        "VulnCheck POC / ITW sync triggered. Results are stored in Dojo EPSS tables; "
+        "core DefectDojo Finding fields are not changed.",
     )
     return HttpResponseRedirect(reverse("dojo_epss:logs"))
 

@@ -10,7 +10,7 @@ DATABASES = {
 INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
-    "dojo_epss.tests.fake_dojo",
+    "dojo_epss.tests.fake_dojo.apps.FakeDojoConfig",
     "dojo_epss",
 ]
 

@@ -31,5 +31,6 @@ urlpatterns = [
     path("actions/compare/", views.action_compare, name="action_compare"),
     path("actions/auto-update/", views.action_auto_update, name="action_auto_update"),
     path("actions/kev-sync/", views.action_kev_sync, name="action_kev_sync"),
+    path("actions/vulncheck-sync/", views.action_vulncheck_sync, name="action_vulncheck_sync"),
     path("actions/test-connection/", views.action_test_connection, name="action_test_connection"),
 ]

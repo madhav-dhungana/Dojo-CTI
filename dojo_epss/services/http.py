@@ -39,6 +39,7 @@ def request_with_retry(
     url: str,
     *,
     params: dict[str, Any] | None = None,
+    json: dict[str, Any] | None = None,
     stream: bool = False,
     retries: int | None = None,
     timeout: int | None = None,
@@ -61,7 +62,14 @@ def request_with_retry(
     while attempt <= retries:
         try:
             log.debug("HTTP %s %s params=%s attempt=%s", method, url, params, attempt)
-            resp = session.request(method, url, params=params, timeout=timeout, stream=stream)
+            resp = session.request(
+                method,
+                url,
+                params=params,
+                json=json,
+                timeout=timeout,
+                stream=stream,
+            )
         except requests.RequestException as exc:
             last_exc = exc
         else:

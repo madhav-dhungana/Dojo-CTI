@@ -15,8 +15,8 @@
 #     -f docker-compose.yml \
 #     -f dojo_epss_pkg/docker/docker-compose.override.dojo-epss.yml \
 #     up -d --build
-# The overlay installs a static hourly Celery beat dispatcher. EPSS/KEV
-# intervals are controlled from the EPSS / KEV Settings page.
+# The overlay installs a static hourly Celery beat dispatcher. EPSS, KEV, and
+# VulnCheck intervals are controlled from the EPSS settings page.
 
 services:
   uwsgi:
