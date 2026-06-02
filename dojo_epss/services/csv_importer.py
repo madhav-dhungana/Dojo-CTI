@@ -62,6 +62,8 @@ def download_and_parse(
     score_date: _dt.date | None = None,
     settings: EPSSSettings | None = None,
     update_log: EPSSUpdateLog | None = None,
+    *,
+    force: bool = False,
 ) -> tuple[_dt.date, list[EpssRow], EPSSDownloadBatch | None]:
     """Download the daily CSV. Returns ``(score_date, rows, batch)``.
 
@@ -71,9 +73,11 @@ def download_and_parse(
     Pass a specific date to pin to that day's snapshot.
 
     ``rows`` is empty (and ``batch`` is None) if CSV downloads are disabled.
+    ``force=True`` is used by CTI DB sync because the CTI catalog always needs
+    the bulk CSV even when Finding EPSS mode is configured for FIRST.org REST.
     """
     s = settings or EPSSSettings.load()
-    if not s.download_full_csv_enabled:
+    if not force and not s.download_full_csv_enabled:
         log.info("EPSS CSV download disabled in settings; skipping.")
         return (_dt.date.today(), [], None)
 

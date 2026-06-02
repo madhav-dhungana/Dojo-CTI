@@ -3,6 +3,7 @@
 from django.contrib import admin
 
 from .models import (
+    CTICVERecord,
     EPSSCVERecord,
     EPSSDownloadBatch,
     EPSSSettings,
@@ -35,6 +36,17 @@ class EPSSCVERecordAdmin(admin.ModelAdmin):
     search_fields = ("cve_id",)
     readonly_fields = ("created_at", "updated_at", "matched_findings_count",
                        "last_compared_at")
+
+
+@admin.register(CTICVERecord)
+class CTICVERecordAdmin(admin.ModelAdmin):
+    list_display = ("cve_id", "epss_score", "epss_date", "known_exploited",
+                    "ransomware_used", "public_exploit_found",
+                    "exploit_in_the_wild", "updated_at")
+    list_filter = ("known_exploited", "ransomware_used", "public_exploit_found",
+                   "exploit_in_the_wild", "epss_date")
+    search_fields = ("cve_id",)
+    readonly_fields = tuple(f.name for f in CTICVERecord._meta.fields)
 
 
 @admin.register(FindingEPSSUpdate)

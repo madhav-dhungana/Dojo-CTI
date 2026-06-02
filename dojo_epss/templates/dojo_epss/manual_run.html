@@ -1,7 +1,7 @@
 {% extends "dojo_epss/base.html" %}
 {% load i18n %}
 
-{% block epss_page_title %}{% trans "Manual EPSS / KEV / VulnCheck actions" %}{% endblock %}
+{% block epss_page_title %}{% trans "Manual EPSS / KEV / VulnCheck / CTI DB actions" %}{% endblock %}
 
 {% block epss_page_body %}
 <style>
@@ -144,6 +144,27 @@
             {% trans "Auto-update eligible Findings" %}
           </button>
         </form>
+      </div>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Sync CTI DB" %}</div>
+      <div class="panel-body">
+        {% if settings.cti_db_enabled %}
+          <form action="{% url 'dojo_epss:action_cti_db_sync' %}" method="post" style="margin-bottom: 6px;">
+            {% csrf_token %}
+            <button class="btn btn-primary btn-block dojo-epss-action-button" type="submit">
+              {% trans "Sync CTI DB" %}
+            </button>
+            <p class="help-block" style="margin-top: 6px;">
+              {% trans "Refreshes package-owned CVE intelligence from enabled CTI DB sources. This does not update core DefectDojo Finding fields." %}
+            </p>
+          </form>
+        {% else %}
+          <div class="alert alert-info" style="margin-top: 12px;">
+            {% trans "CTI DB is disabled. Open EPSS Settings to enable it." %}
+          </div>
+        {% endif %}
       </div>
     </div>
 

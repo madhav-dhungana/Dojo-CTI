@@ -89,6 +89,13 @@ class EPSSSettingsForm(forms.ModelForm):
         help_text="Schedule the Celery Job run for the VulnCheck POC / ITW scan",
     )
 
+    cti_db_schedule_interval = forms.IntegerField(
+        label="CTI DB scheduled sync",
+        min_value=0,
+        max_value=8760,
+        help_text="Schedule the Celery Job run for the CTI DB sync",
+    )
+
     update_severities = forms.MultipleChoiceField(
         choices=EPSSSeverity.choices,
         required=False,
@@ -141,6 +148,11 @@ class EPSSSettingsForm(forms.ModelForm):
             "vulncheck_api_base_url",
             "vulncheck_index",
             "vulncheck_api_token",
+            # CTI DB
+            "cti_db_enabled",
+            "cti_db_sync_epss_enabled",
+            "cti_db_sync_kev_enabled",
+            "cti_db_sync_vulncheck_enabled",
             # URLs
             "api_base_url",
             "csv_base_url",
@@ -164,6 +176,7 @@ class EPSSSettingsForm(forms.ModelForm):
             "epss_schedule_interval",
             "kev_schedule_interval",
             "vulncheck_schedule_interval",
+            "cti_db_schedule_interval",
             # HTTP
             "http_timeout_secs",
             "http_retries",
@@ -202,6 +215,10 @@ class EPSSSettingsForm(forms.ModelForm):
         self.fields["vulncheck_enabled"].label = "VulnCheck enabled"
         self.fields["vulncheck_api_base_url"].label = "VulnCheck API base URL"
         self.fields["vulncheck_index"].label = "VulnCheck index"
+        self.fields["cti_db_enabled"].label = "CTI DB enabled"
+        self.fields["cti_db_sync_epss_enabled"].label = "CTI DB EPSS enabled"
+        self.fields["cti_db_sync_kev_enabled"].label = "CTI DB KEV enabled"
+        self.fields["cti_db_sync_vulncheck_enabled"].label = "CTI DB VulnCheck enabled"
 
         # Populate initial selections from the JSONField on the instance.
         instance = kwargs.get("instance")
@@ -230,6 +247,11 @@ class EPSSSettingsForm(forms.ModelForm):
                 "vulncheck_schedule_interval",
                 instance.vulncheck_schedule_interval_hours
                 if instance.vulncheck_schedule_enabled else 0,
+            )
+            self.initial.setdefault(
+                "cti_db_schedule_interval",
+                instance.cti_db_schedule_interval_hours
+                if instance.cti_db_schedule_enabled else 0,
             )
             if instance.has_vulncheck_token_configured():
                 self.fields["vulncheck_api_token"].widget.attrs[
@@ -296,12 +318,22 @@ class EPSSSettingsForm(forms.ModelForm):
         if cleaned.get("kev_enabled") and not cleaned.get("kev_source_url"):
             self.add_error("kev_source_url", "Enter a KEV source URL.")
 
-        for field in ("epss_schedule_interval", "kev_schedule_interval"):
+        for field in ("epss_schedule_interval", "kev_schedule_interval", "cti_db_schedule_interval"):
             hours = cleaned.get(field)
             if hours is None:
                 self.add_error(field, "Enter 0 to disable or a positive hour interval.")
             elif hours != 0 and hours < 1:
                 self.add_error(field, "Use 0 to disable or at least 1 hour.")
+
+        if cleaned.get("cti_db_enabled") and not (
+            cleaned.get("cti_db_sync_epss_enabled")
+            or cleaned.get("cti_db_sync_kev_enabled")
+            or cleaned.get("cti_db_sync_vulncheck_enabled")
+        ):
+            self.add_error(
+                "cti_db_enabled",
+                "Enable at least one CTI DB source: EPSS, KEV, or VulnCheck.",
+            )
 
         encrypted_token = ""
         token = (cleaned.get("vulncheck_api_token") or "").strip()
@@ -355,6 +387,11 @@ class EPSSSettingsForm(forms.ModelForm):
         obj.vulncheck_schedule_enabled = int(vulncheck_interval) != 0
         if int(vulncheck_interval) != 0:
             obj.vulncheck_schedule_interval_hours = int(vulncheck_interval)
+
+        cti_db_interval = self.cleaned_data.get("cti_db_schedule_interval") or 0
+        obj.cti_db_schedule_enabled = int(cti_db_interval) != 0
+        if int(cti_db_interval) != 0:
+            obj.cti_db_schedule_interval_hours = int(cti_db_interval)
 
         if getattr(self, "_encrypted_vulncheck_api_token", ""):
             obj.vulncheck_api_token_encrypted = self._encrypted_vulncheck_api_token

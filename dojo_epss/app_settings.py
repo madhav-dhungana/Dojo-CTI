@@ -76,6 +76,8 @@ KEV_SYNC_LOCK_KEY = "dojo_epss:kev_sync_lock"
 KEV_SYNC_LOCK_TTL_SECS = 60 * 60  # one hour
 VULNCHECK_SYNC_LOCK_KEY = "dojo_epss:vulncheck_sync_lock"
 VULNCHECK_SYNC_LOCK_TTL_SECS = 60 * 60  # one hour
+CTI_DB_SYNC_LOCK_KEY = "dojo_epss:cti_db_sync_lock"
+CTI_DB_SYNC_LOCK_TTL_SECS = 60 * 60 * 4  # CTI DB can process a large CVE catalog
 SCHEDULE_DISPATCHER_LOCK_KEY = "dojo_epss:schedule_dispatcher_lock"
 SCHEDULE_DISPATCHER_LOCK_TTL_SECS = 10 * 60
 

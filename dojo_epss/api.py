@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, serializers
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import EPSSStatus, FindingEPSSUpdate, FindingKEVUpdate, FindingVulnCheckUpdate
+from .models import CTICVERecord, EPSSStatus, FindingEPSSUpdate, FindingKEVUpdate, FindingVulnCheckUpdate
 
 
 class DojoEpssDashboardPermission(BasePermission):
@@ -239,6 +241,122 @@ class FindingEPSSMatchListAPIView(generics.ListAPIView):
         for row in rows:
             row.kev_snapshot = kev_by_finding.get(row.finding_id)
             row.vulncheck_snapshot = vulncheck_by_finding.get(row.finding_id)
+
+
+class CTICVERecordSerializer(serializers.ModelSerializer):
+    """CTI DB data for one CVE."""
+
+    class Meta:
+        model = CTICVERecord
+        fields = (
+            "id",
+            "cve_id",
+            "epss_score",
+            "epss_percentile",
+            "epss_date",
+            "known_exploited",
+            "ransomware_used",
+            "kev_date_added",
+            "kev_found_date",
+            "ransomware_found_date",
+            "public_exploit_found",
+            "exploit_in_the_wild",
+            "commercial_exploit_found",
+            "weaponized_exploit_found",
+            "reported_exploited_by_threat_actors",
+            "reported_exploited_by_ransomware",
+            "reported_exploited_by_botnets",
+            "reported_exploited_by_honeypot_service",
+            "reported_exploited_by_vulncheck_canaries",
+            "in_cisa_kev",
+            "in_vulncheck_kev",
+            "max_exploit_maturity",
+            "poc_found_date",
+            "itw_found_date",
+            "exploit_count",
+            "vulncheck_source_index",
+            "vulncheck_source_links",
+            "first_seen_at",
+            "last_seen_at",
+            "last_changed_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+@extend_schema(
+    tags=["dojo_epss"],
+    summary="List CTI DB CVE records",
+    description=(
+        "Returns package-owned CTI DB records. These records are global CVE "
+        "intelligence rows and are not limited to DefectDojo Findings."
+    ),
+    parameters=[
+        OpenApiParameter(
+            "cve_id",
+            OpenApiTypes.STR,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="Filter by exact CVE id.",
+        ),
+        OpenApiParameter(
+            "q",
+            OpenApiTypes.STR,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="Case-insensitive CVE id search.",
+        ),
+        OpenApiParameter("kev", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("ransomware", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("poc", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("itw", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter(
+            "epss_min",
+            OpenApiTypes.NUMBER,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="Minimum EPSS score.",
+        ),
+    ],
+    responses={200: CTICVERecordSerializer(many=True)},
+)
+class CTICVERecordListAPIView(generics.ListAPIView):
+    """Read-only API for CTI DB CVE records."""
+
+    serializer_class = CTICVERecordSerializer
+    permission_classes = (IsAuthenticated, DojoEpssDashboardPermission)
+
+    # This function builds the CTI queryset. This function needs query parameters.
+    def get_queryset(self):
+        qs = CTICVERecord.objects.all().order_by("-epss_score", "cve_id")
+
+        cve_id = (self.request.query_params.get("cve_id") or "").strip().upper()
+        if cve_id:
+            qs = qs.filter(cve_id=cve_id)
+
+        q = (self.request.query_params.get("q") or "").strip().upper()
+        if q:
+            qs = qs.filter(cve_id__icontains=q)
+
+        if _truthy_query(self.request.query_params.get("kev")):
+            qs = qs.filter(known_exploited=True)
+        if _truthy_query(self.request.query_params.get("ransomware")):
+            qs = qs.filter(ransomware_used=True)
+        if _truthy_query(self.request.query_params.get("poc")):
+            qs = qs.filter(public_exploit_found=True)
+        if _truthy_query(self.request.query_params.get("itw")):
+            qs = qs.filter(exploit_in_the_wild=True)
+
+        epss_min = (self.request.query_params.get("epss_min") or "").strip()
+        if epss_min:
+            try:
+                min_value = Decimal(epss_min)
+                if min_value.is_finite():
+                    qs = qs.filter(epss_score__gte=min_value)
+            except InvalidOperation:
+                pass
+        return qs
 
 
 # This function reads boolean query values. This function needs a raw value.

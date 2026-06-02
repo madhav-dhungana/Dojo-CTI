@@ -1,6 +1,6 @@
 """Models for dojo_epss.
 
-Seven tables, all owned by this app's app_label:
+Eight tables, all owned by this app's app_label:
 
 * ``EPSSSettings``       — singleton, admin-editable runtime config.
 * ``EPSSCVERecord``      — fetched EPSS rows; UNIQUE(cve_id, epss_date, source).
@@ -12,6 +12,8 @@ Seven tables, all owned by this app's app_label:
 * ``FindingVulnCheckUpdate`` — OneToOne back to ``dojo.Finding``; tracks
                             VulnCheck POC / ITW state discovered by this
                             library without changing core Finding fields.
+* ``CTICVERecord``      — optional package-owned CTI catalog for CVE EPSS,
+                            KEV, ransomware, POC, and ITW state.
 * ``EPSSUpdateLog``      — one row per fetch / compare / download / update action.
 * ``EPSSDownloadBatch``  — one row per full-CSV download attempt; links to a log.
 
@@ -67,6 +69,7 @@ class EPSSAction(models.TextChoices):
     MANUAL_UPDATE = "manual_update", _("Manual update")
     KEV_SYNC = "kev_sync", _("KEV sync")
     VULNCHECK_SYNC = "vulncheck_sync", _("VulnCheck POC / ITW sync")
+    CTI_DB_SYNC = "cti_db_sync", _("CTI DB sync")
 
 
 class EPSSLogStatus(models.TextChoices):
@@ -340,6 +343,45 @@ class EPSSSettings(models.Model):
         blank=True,
         help_text=_("Last time the dispatcher attempted a scheduled VulnCheck sync."),
     )
+
+    # ---- CTI DB ----------------------------------------------------------
+    cti_db_enabled = models.BooleanField(
+        default=False,
+        help_text=_(
+            "Enable the package-owned CTI DB. This stores CVE intelligence "
+            "outside DefectDojo Finding rows so other tools can query it."
+        ),
+    )
+    cti_db_sync_epss_enabled = models.BooleanField(
+        default=True,
+        help_text=_("Sync EPSS data into the CTI DB from the FIRST.org CSV snapshot."),
+    )
+    cti_db_sync_kev_enabled = models.BooleanField(
+        default=True,
+        help_text=_("Sync KEV and ransomware data into the CTI DB from the configured KEV source."),
+    )
+    cti_db_sync_vulncheck_enabled = models.BooleanField(
+        default=False,
+        help_text=_(
+            "Sync VulnCheck POC / ITW data into the CTI DB. This can query "
+            "many CVEs and requires a configured VulnCheck token."
+        ),
+    )
+    cti_db_schedule_enabled = models.BooleanField(
+        default=False,
+        help_text=_("Gate for scheduled CTI DB syncs. Manual CTI DB actions still run."),
+    )
+    cti_db_schedule_interval_hours = models.PositiveSmallIntegerField(
+        default=24,
+        validators=[MinValueValidator(1), MaxValueValidator(8760)],
+        help_text=_("CTI DB scheduled sync interval used by the dispatcher."),
+    )
+    cti_db_last_scheduled_run_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("Last time the dispatcher attempted a scheduled CTI DB sync."),
+    )
+
     # ---- HTTP knobs -------------------------------------------------------
     http_timeout_secs = models.PositiveIntegerField(
         default=app_settings.DEFAULT_HTTP_TIMEOUT_SECS,
@@ -703,7 +745,80 @@ class FindingVulnCheckUpdate(models.Model):
 
 
 # ===========================================================================
-# 6) EPSSUpdateLog — audit row for every action
+# 6) CTICVERecord — optional package-owned CTI catalog
+# ===========================================================================
+class CTICVERecord(models.Model):
+    cve_id = models.CharField(max_length=32, unique=True, db_index=True)
+
+    epss_score = models.DecimalField(
+        max_digits=8, decimal_places=6, null=True, blank=True,
+        validators=[MinValueValidator(Decimal("0.0")), MaxValueValidator(Decimal("1.0"))],
+    )
+    epss_percentile = models.DecimalField(
+        max_digits=8, decimal_places=6, null=True, blank=True,
+        validators=[MinValueValidator(Decimal("0.0")), MaxValueValidator(Decimal("1.0"))],
+    )
+    epss_date = models.DateField(null=True, blank=True, db_index=True)
+    epss_source = models.CharField(max_length=32, blank=True, default="")
+    epss_raw_data = models.JSONField(default=dict, blank=True)
+
+    known_exploited = models.BooleanField(default=False)
+    ransomware_used = models.BooleanField(default=False)
+    kev_date_added = models.DateField(null=True, blank=True)
+    kev_found_date = models.DateField(null=True, blank=True)
+    ransomware_found_date = models.DateField(null=True, blank=True)
+    kev_source_type = models.CharField(
+        max_length=8,
+        choices=KEVSourceType.choices,
+        default=KEVSourceType.JSON,
+    )
+    kev_source_url = models.URLField(max_length=1024, blank=True, default="")
+    kev_raw_data = models.JSONField(default=dict, blank=True)
+
+    public_exploit_found = models.BooleanField(default=False)
+    exploit_in_the_wild = models.BooleanField(default=False)
+    commercial_exploit_found = models.BooleanField(default=False)
+    weaponized_exploit_found = models.BooleanField(default=False)
+    reported_exploited_by_threat_actors = models.BooleanField(default=False)
+    reported_exploited_by_ransomware = models.BooleanField(default=False)
+    reported_exploited_by_botnets = models.BooleanField(default=False)
+    reported_exploited_by_honeypot_service = models.BooleanField(default=False)
+    reported_exploited_by_vulncheck_canaries = models.BooleanField(default=False)
+    in_cisa_kev = models.BooleanField(default=False)
+    in_vulncheck_kev = models.BooleanField(default=False)
+    max_exploit_maturity = models.CharField(max_length=64, blank=True, default="")
+    poc_found_date = models.DateField(null=True, blank=True)
+    itw_found_date = models.DateField(null=True, blank=True)
+    exploit_count = models.PositiveIntegerField(default=0)
+    vulncheck_source_index = models.CharField(max_length=128, blank=True, default="")
+    vulncheck_source_links = models.JSONField(default=list, blank=True)
+    vulncheck_raw_data = models.JSONField(default=dict, blank=True)
+
+    first_seen_at = models.DateTimeField(default=timezone.now)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    last_changed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("CTI CVE record")
+        verbose_name_plural = _("CTI CVE records")
+        indexes = [
+            models.Index(fields=["-epss_score"], name="cti_epss_score_idx"),
+            models.Index(fields=["known_exploited"], name="cti_kev_idx"),
+            models.Index(fields=["ransomware_used"], name="cti_rw_idx"),
+            models.Index(fields=["public_exploit_found"], name="cti_poc_idx"),
+            models.Index(fields=["exploit_in_the_wild"], name="cti_itw_idx"),
+            models.Index(fields=["-updated_at"], name="cti_updated_idx"),
+        ]
+        ordering = ["-epss_score", "cve_id"]
+
+    def __str__(self) -> str:
+        return f"{self.cve_id} CTI"
+
+
+# ===========================================================================
+# 7) EPSSUpdateLog — audit row for every action
 # ===========================================================================
 class EPSSUpdateLog(models.Model):
     action = models.CharField(max_length=32, choices=EPSSAction.choices, db_index=True)
@@ -763,7 +878,7 @@ class EPSSUpdateLog(models.Model):
 
 
 # ===========================================================================
-# 7) EPSSDownloadBatch — one row per CSV download
+# 8) EPSSDownloadBatch — one row per CSV download
 # ===========================================================================
 class EPSSDownloadBatch(models.Model):
     epss_date = models.DateField(db_index=True)

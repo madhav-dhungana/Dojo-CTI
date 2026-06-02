@@ -42,20 +42,25 @@ class KevFetchResult:
     source_type: str
 
 
-# This function fetches matching KEV rows. This function needs target CVEs.
+# This function fetches matching KEV rows. This function needs target CVEs or None.
 def fetch_matching_kev_rows(
-    cves: Iterable[str],
+    cves: Iterable[str] | None,
     settings: EPSSSettings | None = None,
 ) -> KevFetchResult:
-    """Fetch configured KEV source and return only rows matching ``cves``."""
+    """Fetch configured KEV source and return matching rows.
+
+    Pass ``cves=None`` to return the full source feed for CTI DB sync.
+    """
     s = settings or EPSSSettings.load()
-    target_cves = {_normalize_cve(c) for c in cves if _normalize_cve(c)}
+    target_cves = None
+    if cves is not None:
+        target_cves = {_normalize_cve(c) for c in cves if _normalize_cve(c)}
     source_url = (s.kev_source_url or "").strip()
     source_type = s.kev_source_type or KEVSourceType.JSON
 
     if not source_url:
         raise EpssFetchError("KEV source URL is empty.")
-    if not target_cves:
+    if cves is not None and not target_cves:
         return KevFetchResult({}, 0, "", "", source_url, source_type)
 
     sess = build_session(timeout=int(s.http_timeout_secs))
@@ -104,7 +109,7 @@ def fetch_matching_kev_rows(
 def _parse_json_response(
     content: bytes,
     source_url: str,
-    target_cves: set[str],
+    target_cves: set[str] | None,
 ) -> tuple[list[KevRow], int, str, str]:
     try:
         data = json.loads(_decode_content(content, source_url))
@@ -132,7 +137,7 @@ def _parse_json_response(
         if not isinstance(item, dict):
             continue
         row = _row_from_mapping(item)
-        if row and row.cve_id in target_cves:
+        if row and (target_cves is None or row.cve_id in target_cves):
             rows.append(row)
     return rows, len(items), catalog_version, date_released
 
@@ -141,7 +146,7 @@ def _parse_json_response(
 def _parse_csv_response(
     content: bytes,
     source_url: str,
-    target_cves: set[str],
+    target_cves: set[str] | None,
 ) -> tuple[list[KevRow], int]:
     text = _decode_content(content, source_url)
     reader = csv.DictReader(io.StringIO(text))
@@ -153,7 +158,7 @@ def _parse_csv_response(
     for raw in reader:
         total += 1
         row = _row_from_mapping(raw)
-        if row and row.cve_id in target_cves:
+        if row and (target_cves is None or row.cve_id in target_cves):
             rows.append(row)
     return rows, total
 

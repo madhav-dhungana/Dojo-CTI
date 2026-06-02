@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from django.urls import include, path, re_path
 
-from dojo_epss.api import FindingEPSSMatchListAPIView
+from dojo_epss.api import CTICVERecordListAPIView, FindingEPSSMatchListAPIView
 
 # Import dojo's URLconf — by the time Django evaluates this module the
 # app registry is ready, so this is safe.
@@ -32,6 +32,11 @@ urlpatterns = [
         r"^api/v2/dojo_epss/finding-matches/$",
         FindingEPSSMatchListAPIView.as_view(),
         name="dojo_epss_api_finding_matches",
+    ),
+    re_path(
+        r"^api/v2/dojo_epss/cti-cves/$",
+        CTICVERecordListAPIView.as_view(),
+        name="dojo_epss_api_cti_cves",
     ),
 ] + list(_dojo_urlpatterns) + [
     path("epss/", include("dojo_epss.urls", namespace="dojo_epss")),

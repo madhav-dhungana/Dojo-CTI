@@ -26,6 +26,7 @@ from .models import (
     EPSSSettings,
     EPSSUpdateLog,
 )
+from .services.cti_db_updater import sync_cti_db
 from .services.epss_importer import (
     import_csv,
     import_for_findings,
@@ -129,6 +130,21 @@ def _vulncheck_sync_lock():
     finally:
         if acquired:
             cache.delete(app_settings.VULNCHECK_SYNC_LOCK_KEY)
+
+
+# This function prevents overlapping CTI DB syncs. This function needs Django cache.
+@contextmanager
+def _cti_db_sync_lock():
+    acquired = cache.add(
+        app_settings.CTI_DB_SYNC_LOCK_KEY,
+        "1",
+        app_settings.CTI_DB_SYNC_LOCK_TTL_SECS,
+    )
+    try:
+        yield bool(acquired)
+    finally:
+        if acquired:
+            cache.delete(app_settings.CTI_DB_SYNC_LOCK_KEY)
 
 
 # This function prevents overlapping scheduler ticks. This function needs Django cache.
@@ -383,6 +399,12 @@ def vulncheck_full_sync_task(self, *, user_id: int | None = None):  # noqa: ARG0
     return _run_vulncheck_full_sync(user_id=user_id, enforce_schedule_gate=(user_id is None))
 
 
+# This task runs the full CTI DB sync. This task needs CTI DB settings enabled.
+@epss_task(name="dojo_epss.cti_db_sync_task")
+def cti_db_sync_task(self, *, user_id: int | None = None):  # noqa: ARG001
+    return _run_cti_db_sync(user_id=user_id, enforce_schedule_gate=(user_id is None))
+
+
 # This function performs KEV sync work. This function needs settings and a lock.
 def _run_kev_full_sync(
     *,
@@ -489,17 +511,79 @@ def _run_vulncheck_full_sync(
     return log_row.id
 
 
-# This task checks scheduled EPSS, KEV, and VulnCheck work. This task needs Celery beat.
+# This function performs CTI DB sync work. This function needs settings and a lock.
+def _run_cti_db_sync(
+    *,
+    user_id: int | None = None,
+    enforce_schedule_gate: bool = True,
+) -> int:
+    s = EPSSSettings.load()
+    log_row = _start_log(
+        EPSSAction.CTI_DB_SYNC,
+        {
+            "cti_db_enabled": s.cti_db_enabled,
+            "sync_epss": s.cti_db_sync_epss_enabled,
+            "sync_kev": s.cti_db_sync_kev_enabled,
+            "sync_vulncheck": s.cti_db_sync_vulncheck_enabled,
+            "csv_base_url": s.csv_base_url,
+            "kev_source_type": s.kev_source_type,
+            "kev_source_url": s.kev_source_url,
+            "vulncheck_api_base_url": s.vulncheck_api_base_url,
+            "vulncheck_index": s.vulncheck_index,
+            "vulncheck_token_configured": s.has_vulncheck_token_configured(),
+        },
+        user_id=user_id,
+    )
+
+    if not s.enabled:
+        log_row.mark_finished(EPSSLogStatus.SKIPPED, error="EPSS/CTI module disabled (settings.enabled=False).")
+        return log_row.id
+    if not s.cti_db_enabled:
+        log_row.mark_finished(EPSSLogStatus.SKIPPED, error="CTI DB disabled (settings.cti_db_enabled=False).")
+        return log_row.id
+    if not (
+        s.cti_db_sync_epss_enabled
+        or s.cti_db_sync_kev_enabled
+        or s.cti_db_sync_vulncheck_enabled
+    ):
+        log_row.mark_finished(EPSSLogStatus.SKIPPED, error="No CTI DB source is enabled.")
+        return log_row.id
+
+    if enforce_schedule_gate and not s.cti_db_schedule_enabled:
+        log_row.mark_finished(
+            EPSSLogStatus.SKIPPED,
+            error="Scheduled CTI DB runs disabled (settings.cti_db_schedule_enabled=False). Manual runs still work.",
+        )
+        return log_row.id
+
+    with _cti_db_sync_lock() as acquired:
+        if not acquired:
+            log_row.mark_finished(EPSSLogStatus.SKIPPED, error="another CTI DB sync is already running (lock held)")
+            return log_row.id
+
+        try:
+            stats = sync_cti_db(settings=s, update_log=log_row)
+            outcome = EPSSLogStatus.SUCCESS if stats["failed"] == 0 else EPSSLogStatus.PARTIAL_SUCCESS
+            log_row.mark_finished(outcome)
+        except EpssFetchError as exc:
+            log_row.mark_finished(EPSSLogStatus.FAILED, error=str(exc))
+        except Exception as exc:  # pylint: disable=broad-except
+            log.exception("CTI DB sync failed")
+            log_row.mark_finished(EPSSLogStatus.FAILED, error=f"unexpected: {exc!s}")
+    return log_row.id
+
+
+# This task checks scheduled EPSS, KEV, VulnCheck, and CTI DB work. This task needs Celery beat.
 @epss_task(name="dojo_epss.schedule_dispatcher_task")
 def schedule_dispatcher_task(self):  # noqa: ARG001
     """Hourly lightweight scheduler.
 
     Celery beat calls this static task. The task reads EPSSSettings and only
-    runs EPSS/KEV/VulnCheck syncs when their UI-controlled interval is due.
+    runs EPSS/KEV/VulnCheck/CTI DB syncs when their UI-controlled interval is due.
     Not-due ticks do not create EPSSUpdateLog rows.
     """
     s = EPSSSettings.load()
-    result = {"epss": "not_due", "kev": "not_due", "vulncheck": "not_due"}
+    result = {"epss": "not_due", "kev": "not_due", "vulncheck": "not_due", "cti_db": "not_due"}
 
     if not s.enabled:
         return {"module": "disabled", **result}
@@ -532,6 +616,14 @@ def schedule_dispatcher_task(self):  # noqa: ARG001
         ):
             EPSSSettings.objects.filter(pk=s.pk).update(vulncheck_last_scheduled_run_at=now)
             result["vulncheck"] = _run_vulncheck_full_sync(user_id=None, enforce_schedule_gate=True)
+
+        if s.cti_db_enabled and s.cti_db_schedule_enabled and _interval_due(
+            s.cti_db_last_scheduled_run_at,
+            s.cti_db_schedule_interval_hours,
+            now,
+        ):
+            EPSSSettings.objects.filter(pk=s.pk).update(cti_db_last_scheduled_run_at=now)
+            result["cti_db"] = _run_cti_db_sync(user_id=None, enforce_schedule_gate=True)
 
     return result
 

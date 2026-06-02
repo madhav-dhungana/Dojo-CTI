@@ -12,14 +12,27 @@ the URLs aren't mounted yet the entire <li> evaluates to nothing — safe
 to leave in place during upgrades or when temporarily disabling the
 module.
 
-NOTE: We deliberately don't list a "CVE Records" link — this library is
-finding-driven, so the EPSS catalog is an internal cache, not an
-end-user concern.
+CTI DB is listed inside the EPSS submenu because it is package-owned CVE
+intelligence, not a separate DefectDojo module.
 {% endcomment %}
 {% load i18n %}
 {% url 'dojo_epss:dashboard' as epss_dashboard_url %}
 {% if epss_dashboard_url %}
-<li>
+<li class="dojo-epss-menu">
+<style>
+  @media (min-width: 768px) {
+    #side-menu li.dojo-epss-menu {
+      position: relative;
+    }
+    #side-menu li.dojo-epss-menu:hover > ul.nav-second-level,
+    #side-menu li.dojo-epss-menu:focus-within > ul.nav-second-level {
+      top: auto !important;
+      bottom: 0 !important;
+      max-height: calc(100vh - 24px);
+      overflow-y: auto;
+    }
+  }
+</style>
   <a href="{{ epss_dashboard_url }}" aria-expanded="false" aria-label="EPSS">
     <i class="fa-solid fa-shield-halved fa-fw"></i>
     <span>{% trans "EPSS" %}</span>
@@ -29,6 +42,7 @@ end-user concern.
     <li><a href="{{ epss_dashboard_url }}">{% trans "EPSS Dashboard" %}</a></li>
     <li><a href="{% url 'dojo_epss:settings' %}">{% trans "EPSS Settings" %}</a></li>
     <li><a href="{% url 'dojo_epss:finding_matches' %}">{% trans "Finding Matches" %}</a></li>
+    <li><a href="{% url 'dojo_epss:cti_db' %}">{% trans "CTI DB" %}</a></li>
     <li><a href="{% url 'dojo_epss:logs' %}">{% trans "Update Logs" %}</a></li>
     <li><a href="{% url 'dojo_epss:manual_run' %}">{% trans "Manual Run" %}</a></li>
   </ul>

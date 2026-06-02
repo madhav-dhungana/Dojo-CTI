@@ -31,6 +31,7 @@ def _settings_form_data(source: str) -> dict:
         "epss_schedule_interval": "0",
         "kev_schedule_interval": "0",
         "vulncheck_schedule_interval": "0",
+        "cti_db_schedule_interval": "0",
         "http_timeout_secs": "30",
         "http_retries": "3",
     }
@@ -71,6 +72,7 @@ def test_settings_form_saves_ui_schedule_intervals(settings_row):
     data["epss_schedule_interval"] = "18"
     data["kev_schedule_interval"] = "36"
     data["vulncheck_schedule_interval"] = "72"
+    data["cti_db_schedule_interval"] = "96"
     form = EPSSSettingsForm(data, instance=settings_row)
     assert form.is_valid(), form.errors
     obj = form.save()
@@ -80,3 +82,5 @@ def test_settings_form_saves_ui_schedule_intervals(settings_row):
     assert obj.kev_schedule_interval_hours == 36
     assert obj.vulncheck_schedule_enabled is True
     assert obj.vulncheck_schedule_interval_hours == 72
+    assert obj.cti_db_schedule_enabled is True
+    assert obj.cti_db_schedule_interval_hours == 96
