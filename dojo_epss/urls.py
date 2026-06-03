@@ -18,6 +18,7 @@ urlpatterns = [
     # Read-only pages
     path("", views.dashboard, name="dashboard"),
     path("finding-matches/", views.finding_matches, name="finding_matches"),
+    path("cti-db/", views.cti_db, name="cti_db"),
     path("logs/", views.update_logs, name="logs"),
     path("logs/<int:pk>/", views.update_log_detail, name="log_detail"),
     path("manual/", views.manual_run, name="manual_run"),
@@ -31,5 +32,7 @@ urlpatterns = [
     path("actions/compare/", views.action_compare, name="action_compare"),
     path("actions/auto-update/", views.action_auto_update, name="action_auto_update"),
     path("actions/kev-sync/", views.action_kev_sync, name="action_kev_sync"),
+    path("actions/vulncheck-sync/", views.action_vulncheck_sync, name="action_vulncheck_sync"),
+    path("actions/cti-db-sync/", views.action_cti_db_sync, name="action_cti_db_sync"),
     path("actions/test-connection/", views.action_test_connection, name="action_test_connection"),
 ]

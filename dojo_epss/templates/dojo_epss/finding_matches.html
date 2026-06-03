@@ -1,7 +1,7 @@
 {% extends "dojo_epss/base.html" %}
 {% load i18n %}
 
-{% block epss_page_title %}{% trans "Finding EPSS / KEV Matches" %}{% endblock %}
+{% block epss_page_title %}{% trans "Finding EPSS / KEV / POC / ITW Matches" %}{% endblock %}
 
 {% block epss_page_body %}
 <form method="get" class="form-inline" style="margin-bottom: 12px;">
@@ -23,6 +23,8 @@
     <th>{% trans "Percentile" %}</th><th>{% trans "EPSS date" %}</th>
     <th>{% trans "KEV" %}</th><th>{% trans "Ransomware" %}</th>
     <th>{% trans "KEV found" %}</th>
+    <th>{% trans "POC" %}</th><th>{% trans "ITW" %}</th>
+    <th>{% trans "VulnCheck links" %}</th>
     <th>{% trans "Status" %}</th>
     <th>{% trans "Last checked" %}</th>
     <th>{% trans "Last updated" %}</th>
@@ -61,12 +63,43 @@
           —
         {% endif %}
       </td>
+      <td>
+        {% if fu.vulncheck_snapshot.public_exploit_found %}
+          <span class="label label-warning">{% trans "Yes" %}</span>
+          {% if fu.vulncheck_snapshot.poc_found_date %}{{ fu.vulncheck_snapshot.poc_found_date }}{% endif %}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>
+        {% if fu.vulncheck_snapshot.exploit_in_the_wild %}
+          <span class="label label-danger">{% trans "Yes" %}</span>
+          {% if fu.vulncheck_snapshot.itw_found_date %}{{ fu.vulncheck_snapshot.itw_found_date }}{% endif %}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td>
+        {% if fu.vulncheck_snapshot.source_links %}
+          {% for link in fu.vulncheck_snapshot.source_links|slice:":3" %}
+            {% if link.url %}
+              <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.name|default:link.refsource|default:"link" }}</a>{% if not forloop.last %}<br>{% endif %}
+            {% elif link.reference_url %}
+              <a href="{{ link.reference_url }}" target="_blank" rel="noopener noreferrer">{{ link.name|default:link.refsource|default:"link" }}</a>{% if not forloop.last %}<br>{% endif %}
+            {% else %}
+              {{ link.name|default:link.refsource|default:"link" }}{% if not forloop.last %}<br>{% endif %}
+            {% endif %}
+          {% endfor %}
+        {% else %}
+          —
+        {% endif %}
+      </td>
       <td>{{ fu.get_status_display }}</td>
       <td>{{ fu.last_checked_at|default:"—" }}</td>
       <td>{{ fu.last_updated_at|default:"—" }}</td>
     </tr>
     {% empty %}
-    <tr><td colspan="14">{% trans "No matched findings yet." %}</td></tr>
+    <tr><td colspan="17">{% trans "No matched findings yet." %}</td></tr>
     {% endfor %}
   </tbody>
 </table>

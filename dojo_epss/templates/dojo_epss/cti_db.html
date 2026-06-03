@@ -1,0 +1,149 @@
+{% extends "dojo_epss/base.html" %}
+{% load i18n %}
+
+{% block epss_page_title %}{% trans "CTI DB" %}{% endblock %}
+
+{% block epss_page_body %}
+<style>
+  .dojo-epss-cti-summary {
+    margin-bottom: 12px;
+  }
+  .dojo-epss-cti-summary .label {
+    display: inline-block;
+    margin: 0 4px 6px 0;
+    font-size: 12px;
+  }
+  .dojo-epss-cti-table td {
+    vertical-align: middle !important;
+  }
+  .dojo-epss-cti-links a {
+    display: block;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>
+
+{% if not settings.cti_db_enabled %}
+  <div class="alert alert-info">
+    {% trans "CTI DB is disabled in EPSS Settings." %}
+  </div>
+{% endif %}
+
+<div class="dojo-epss-cti-summary">
+  <span class="label label-default">{% trans "Records" %}: {{ counts.records }}</span>
+  <span class="label label-danger">{% trans "KEV" %}: {{ counts.kev }}</span>
+  <span class="label label-warning">{% trans "Ransomware" %}: {{ counts.ransomware }}</span>
+  <span class="label label-info">{% trans "POC" %}: {{ counts.poc }}</span>
+  <span class="label label-primary">{% trans "ITW" %}: {{ counts.itw }}</span>
+  {% if last_cti %}
+    <span class="label label-success">{% trans "Last sync" %}: {{ last_cti.started_at }}</span>
+  {% endif %}
+</div>
+
+<form method="get" class="form-inline" style="margin-bottom: 12px;">
+  <input type="text" name="q" class="form-control" value="{{ q }}" placeholder="{% trans 'CVE ID' %}">
+  <label class="checkbox-inline">
+    <input type="checkbox" name="kev" value="1"{% if filters.kev %} checked{% endif %}> {% trans "KEV" %}
+  </label>
+  <label class="checkbox-inline">
+    <input type="checkbox" name="ransomware" value="1"{% if filters.ransomware %} checked{% endif %}> {% trans "Ransomware" %}
+  </label>
+  <label class="checkbox-inline">
+    <input type="checkbox" name="poc" value="1"{% if filters.poc %} checked{% endif %}> {% trans "POC" %}
+  </label>
+  <label class="checkbox-inline">
+    <input type="checkbox" name="itw" value="1"{% if filters.itw %} checked{% endif %}> {% trans "ITW" %}
+  </label>
+  <button class="btn btn-default">{% trans "Apply" %}</button>
+  {% if settings.cti_db_enabled %}
+    <button class="btn btn-primary" type="submit" form="dojo-epss-cti-sync-form">
+      {% trans "Sync CTI DB" %}
+    </button>
+  {% endif %}
+</form>
+
+{% if settings.cti_db_enabled %}
+  <form id="dojo-epss-cti-sync-form" action="{% url 'dojo_epss:action_cti_db_sync' %}" method="post" style="display: none;">
+    {% csrf_token %}
+  </form>
+{% endif %}
+
+<table class="table table-striped table-condensed dojo-epss-cti-table">
+  <thead>
+    <tr>
+      <th>{% trans "CVE" %}</th>
+      <th>{% trans "EPSS" %}</th>
+      <th>{% trans "Percentile" %}</th>
+      <th>{% trans "EPSS date" %}</th>
+      <th>{% trans "KEV" %}</th>
+      <th>{% trans "Ransomware" %}</th>
+      <th>{% trans "POC" %}</th>
+      <th>{% trans "ITW" %}</th>
+      <th>{% trans "Links" %}</th>
+      <th>{% trans "Updated" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in page.object_list %}
+      <tr>
+        <td><strong>{{ row.cve_id }}</strong></td>
+        <td>{{ row.epss_score|default_if_none:"-" }}</td>
+        <td>{{ row.epss_percentile|default_if_none:"-" }}</td>
+        <td>{{ row.epss_date|default:"-" }}</td>
+        <td>
+          {% if row.known_exploited %}
+            <span class="label label-danger">{% trans "Yes" %}</span>
+            {% if row.kev_found_date %}<br><small>{{ row.kev_found_date }}</small>{% endif %}
+          {% else %}
+            <span class="label label-default">{% trans "No" %}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.ransomware_used %}
+            <span class="label label-warning">{% trans "Yes" %}</span>
+            {% if row.ransomware_found_date %}<br><small>{{ row.ransomware_found_date }}</small>{% endif %}
+          {% else %}
+            <span class="label label-default">{% trans "No" %}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.public_exploit_found %}
+            <span class="label label-info">{% trans "Yes" %}</span>
+            {% if row.poc_found_date %}<br><small>{{ row.poc_found_date }}</small>{% endif %}
+          {% else %}
+            <span class="label label-default">{% trans "No" %}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.exploit_in_the_wild %}
+            <span class="label label-primary">{% trans "Yes" %}</span>
+            {% if row.itw_found_date %}<br><small>{{ row.itw_found_date }}</small>{% endif %}
+          {% else %}
+            <span class="label label-default">{% trans "No" %}</span>
+          {% endif %}
+        </td>
+        <td class="dojo-epss-cti-links">
+          {% if row.vulncheck_source_links %}
+            {% for link in row.vulncheck_source_links|slice:":3" %}
+              {% if link.url %}
+                <a href="{{ link.url }}" target="_blank" rel="noopener">{{ link.name|default:link.url }}</a>
+              {% elif link.reference_url %}
+                <a href="{{ link.reference_url }}" target="_blank" rel="noopener">{{ link.name|default:link.reference_url }}</a>
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>{{ row.updated_at }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="10">{% trans "No CTI DB records yet." %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% include "dojo_epss/partials/_pagination.html" with page=page %}
+{% endblock %}

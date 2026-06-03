@@ -24,6 +24,7 @@ from django.views.decorators.http import require_POST
 
 from .forms import EPSSSettingsForm
 from .models import (
+    CTICVERecord,
     EPSSAction,
     EPSSDownloadBatch,
     EPSSLogStatus,
@@ -32,6 +33,7 @@ from .models import (
     EPSSUpdateLog,
     FindingEPSSUpdate,
     FindingKEVUpdate,
+    FindingVulnCheckUpdate,
 )
 from .permissions import superuser_required, view_or_perm
 from .services.first_client import FirstEPSSClient
@@ -94,6 +96,14 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         EPSSUpdateLog.objects.filter(action=EPSSAction.KEV_SYNC)
         .order_by("-started_at").first()
     )
+    last_vulncheck = (
+        EPSSUpdateLog.objects.filter(action=EPSSAction.VULNCHECK_SYNC)
+        .order_by("-started_at").first()
+    )
+    last_cti = (
+        EPSSUpdateLog.objects.filter(action=EPSSAction.CTI_DB_SYNC)
+        .order_by("-started_at").first()
+    )
 
     counts = {
         "matches": FindingEPSSUpdate.objects.exclude(status=EPSSStatus.NOT_CHECKED).count(),
@@ -107,6 +117,19 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         "updated": FindingKEVUpdate.objects.filter(status=EPSSStatus.UPDATED).count(),
         "failed": FindingKEVUpdate.objects.filter(status=EPSSStatus.FAILED).count(),
     }
+    vulncheck_counts = {
+        "poc": FindingVulnCheckUpdate.objects.filter(public_exploit_found=True).count(),
+        "itw": FindingVulnCheckUpdate.objects.filter(exploit_in_the_wild=True).count(),
+        "weaponized": FindingVulnCheckUpdate.objects.filter(weaponized_exploit_found=True).count(),
+        "failed": FindingVulnCheckUpdate.objects.filter(status=EPSSStatus.FAILED).count(),
+    }
+    cti_counts = {
+        "records": CTICVERecord.objects.count(),
+        "kev": CTICVERecord.objects.filter(known_exploited=True).count(),
+        "ransomware": CTICVERecord.objects.filter(ransomware_used=True).count(),
+        "poc": CTICVERecord.objects.filter(public_exploit_found=True).count(),
+        "itw": CTICVERecord.objects.filter(exploit_in_the_wild=True).count(),
+    }
     top_matches = list(
         FindingEPSSUpdate.objects.exclude(status=EPSSStatus.NOT_CHECKED)
         .select_related("finding").order_by("-epss_score")[:10]
@@ -119,6 +142,14 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     }
     for fu in top_matches:
         fu.kev_snapshot = kev_by_finding.get(fu.finding_id)
+    vulncheck_by_finding = {
+        row.finding_id: row
+        for row in FindingVulnCheckUpdate.objects.filter(
+            finding_id__in=[fu.finding_id for fu in top_matches],
+        )
+    }
+    for fu in top_matches:
+        fu.vulncheck_snapshot = vulncheck_by_finding.get(fu.finding_id)
 
     return render(request, "dojo_epss/dashboard.html", {
         "settings": s,
@@ -127,8 +158,12 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         "last_compare": last_compare,
         "last_update": last_update,
         "last_kev": last_kev,
+        "last_vulncheck": last_vulncheck,
+        "last_cti": last_cti,
         "counts": counts,
         "kev_counts": kev_counts,
+        "vulncheck_counts": vulncheck_counts,
+        "cti_counts": cti_counts,
         "top_matches": top_matches,
     })
 
@@ -188,6 +223,14 @@ def finding_matches(request: HttpRequest) -> HttpResponse:
     }
     for fu in page.object_list:
         fu.kev_snapshot = kev_by_finding.get(fu.finding_id)
+    vulncheck_by_finding = {
+        row.finding_id: row
+        for row in FindingVulnCheckUpdate.objects.filter(
+            finding_id__in=[fu.finding_id for fu in page.object_list],
+        )
+    }
+    for fu in page.object_list:
+        fu.vulncheck_snapshot = vulncheck_by_finding.get(fu.finding_id)
 
     return render(request, "dojo_epss/finding_matches.html", {
         "page": page,
@@ -197,7 +240,51 @@ def finding_matches(request: HttpRequest) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# 5) Update Logs
+# 5) CTI DB
+# ---------------------------------------------------------------------------
+# This view lists package-owned CTI DB records. This view needs dashboard access.
+@view_or_perm()
+def cti_db(request: HttpRequest) -> HttpResponse:
+    _crumb(request, "CTI DB")
+    qs = CTICVERecord.objects.all().order_by("-epss_score", "cve_id")
+
+    q = (request.GET.get("q") or "").strip().upper()
+    if q:
+        qs = qs.filter(cve_id__icontains=q)
+    if _truthy_query(request.GET.get("kev")):
+        qs = qs.filter(known_exploited=True)
+    if _truthy_query(request.GET.get("ransomware")):
+        qs = qs.filter(ransomware_used=True)
+    if _truthy_query(request.GET.get("poc")):
+        qs = qs.filter(public_exploit_found=True)
+    if _truthy_query(request.GET.get("itw")):
+        qs = qs.filter(exploit_in_the_wild=True)
+
+    page = Paginator(qs, 50).get_page(request.GET.get("page"))
+    counts = {
+        "records": CTICVERecord.objects.count(),
+        "kev": CTICVERecord.objects.filter(known_exploited=True).count(),
+        "ransomware": CTICVERecord.objects.filter(ransomware_used=True).count(),
+        "poc": CTICVERecord.objects.filter(public_exploit_found=True).count(),
+        "itw": CTICVERecord.objects.filter(exploit_in_the_wild=True).count(),
+    }
+    return render(request, "dojo_epss/cti_db.html", {
+        "page": page,
+        "counts": counts,
+        "settings": EPSSSettings.load(),
+        "last_cti": EPSSUpdateLog.objects.filter(action=EPSSAction.CTI_DB_SYNC).order_by("-started_at").first(),
+        "q": q,
+        "filters": {
+            "kev": request.GET.get("kev"),
+            "ransomware": request.GET.get("ransomware"),
+            "poc": request.GET.get("poc"),
+            "itw": request.GET.get("itw"),
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# 6) Update Logs
 # ---------------------------------------------------------------------------
 # This view lists EPSS and KEV update logs. This view needs dashboard access.
 @view_or_perm()
@@ -228,7 +315,7 @@ def update_log_detail(request: HttpRequest, pk: int) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
-# 6) Manual Run page
+# 7) Manual Run page
 # ---------------------------------------------------------------------------
 # This view shows manual run actions. This view needs dashboard access.
 @view_or_perm()
@@ -422,6 +509,62 @@ def _do_kev_sync(request: HttpRequest) -> HttpResponse:
     return HttpResponseRedirect(reverse("dojo_epss:logs"))
 
 
+# This action starts VulnCheck sync. This action needs a superuser POST.
+@require_POST
+@superuser_required
+def action_vulncheck_sync(request: HttpRequest) -> HttpResponse:
+    return _safe_action("VulnCheck sync", "dojo_epss:logs", _do_vulncheck_sync)(request)
+
+
+# This function runs VulnCheck sync checks. This function needs token settings.
+def _do_vulncheck_sync(request: HttpRequest) -> HttpResponse:
+    s = EPSSSettings.load()
+    if not s.vulncheck_enabled:
+        messages.warning(request, "VulnCheck checks are disabled in EPSS Settings.")
+        return HttpResponseRedirect(reverse("dojo_epss:manual_run"))
+    if not s.has_vulncheck_token_configured():
+        messages.warning(request, "VulnCheck API token is not configured in EPSS Settings or environment.")
+        return HttpResponseRedirect(reverse("dojo_epss:manual_run"))
+
+    _enqueue_or_run(epss_tasks.vulncheck_full_sync_task, user_id=request.user.id)
+    messages.info(
+        request,
+        "VulnCheck POC / ITW sync triggered. Results are stored in Dojo EPSS tables; "
+        "core DefectDojo Finding fields are not changed.",
+    )
+    return HttpResponseRedirect(reverse("dojo_epss:logs"))
+
+
+# This action starts CTI DB sync. This action needs a superuser POST.
+@require_POST
+@superuser_required
+def action_cti_db_sync(request: HttpRequest) -> HttpResponse:
+    return _safe_action("CTI DB sync", "dojo_epss:logs", _do_cti_db_sync)(request)
+
+
+# This function runs CTI DB sync checks. This function needs CTI settings.
+def _do_cti_db_sync(request: HttpRequest) -> HttpResponse:
+    s = EPSSSettings.load()
+    if not s.cti_db_enabled:
+        messages.warning(request, "CTI DB is disabled in EPSS Settings.")
+        return HttpResponseRedirect(reverse("dojo_epss:manual_run"))
+    if not (
+        s.cti_db_sync_epss_enabled
+        or s.cti_db_sync_kev_enabled
+        or s.cti_db_sync_vulncheck_enabled
+    ):
+        messages.warning(request, "No CTI DB source is enabled in EPSS Settings.")
+        return HttpResponseRedirect(reverse("dojo_epss:manual_run"))
+
+    _enqueue_or_run(epss_tasks.cti_db_sync_task, user_id=request.user.id)
+    messages.info(
+        request,
+        "CTI DB sync triggered. Results are stored in Dojo EPSS CTI tables "
+        "and do not change core DefectDojo Finding fields.",
+    )
+    return HttpResponseRedirect(reverse("dojo_epss:logs"))
+
+
 # This action tests FIRST.org connectivity. This action needs a superuser POST.
 @require_POST
 @superuser_required
@@ -442,3 +585,8 @@ def action_test_connection(request: HttpRequest) -> HttpResponse:
 # helpers
 # ---------------------------------------------------------------------------
 # _floatp helper removed — its only caller (the CVE catalog view) was deleted.
+
+
+# This function reads boolean query values. This function needs a raw value.
+def _truthy_query(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}

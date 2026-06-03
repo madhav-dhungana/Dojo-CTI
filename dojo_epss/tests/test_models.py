@@ -6,6 +6,7 @@ import datetime as _dt
 from decimal import Decimal
 
 import pytest
+from django.db import transaction
 
 from dojo_epss.models import (
     EPSSCVERecord,
@@ -15,6 +16,7 @@ from dojo_epss.models import (
     EPSSStatus,
     EPSSUpdateLog,
     FindingEPSSUpdate,
+    FindingVulnCheckUpdate,
 )
 
 
@@ -56,11 +58,12 @@ def test_record_unique_constraint_per_date_source():
         epss_date=_dt.date(2024, 5, 1),
     )
     with pytest.raises(Exception):
-        EPSSCVERecord.objects.create(
-            cve_id="CVE-2024-0001", epss_score=Decimal("0.50"),
-            epss_percentile=Decimal("0.60"),
-            epss_date=_dt.date(2024, 5, 1),
-        )
+        with transaction.atomic():
+            EPSSCVERecord.objects.create(
+                cve_id="CVE-2024-0001", epss_score=Decimal("0.50"),
+                epss_percentile=Decimal("0.60"),
+                epss_date=_dt.date(2024, 5, 1),
+            )
     # Different source should be allowed.
     EPSSCVERecord.objects.create(
         cve_id="CVE-2024-0001", epss_score=Decimal("0.50"),
@@ -81,6 +84,17 @@ def test_finding_epss_update_is_one_to_one(fake_finding):
     FindingEPSSUpdate.objects.create(finding=fake_finding)
     with pytest.raises(Exception):
         FindingEPSSUpdate.objects.create(finding=fake_finding)
+
+
+@pytest.mark.django_db
+def test_finding_vulncheck_update_is_one_to_one(fake_finding):
+    FindingVulnCheckUpdate.objects.create(
+        finding=fake_finding,
+        cve_id="CVE-2024-0001",
+        public_exploit_found=True,
+    )
+    with pytest.raises(Exception):
+        FindingVulnCheckUpdate.objects.create(finding=fake_finding)
 
 
 @pytest.mark.django_db

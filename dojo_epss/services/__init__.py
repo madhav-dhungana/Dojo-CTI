@@ -7,6 +7,9 @@
 * epss_importer.py    — upserts EPSSCVERecord rows.
 * finding_matcher.py  — matches CVE rows against Findings; writes match logs.
 * finding_updater.py  — writes Finding.epss_score / .epss_percentile when allowed.
+* kev_updater.py      — positively updates KEV / ransomware Finding signals.
+* vulncheck_client.py — queries VulnCheck POC / ITW data in CVE chunks.
+* vulncheck_updater.py — writes app-owned VulnCheck Finding snapshots.
 * scheduler.py        — full-sync sequencer + cache-based concurrency lock.
 
 No service module ever lets an external API failure bubble up to a Django

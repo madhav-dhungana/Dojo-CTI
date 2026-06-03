@@ -3,12 +3,14 @@
 from django.contrib import admin
 
 from .models import (
+    CTICVERecord,
     EPSSCVERecord,
     EPSSDownloadBatch,
     EPSSSettings,
     EPSSUpdateLog,
     FindingEPSSUpdate,
     FindingKEVUpdate,
+    FindingVulnCheckUpdate,
 )
 
 
@@ -16,7 +18,8 @@ from .models import (
 class EPSSSettingsAdmin(admin.ModelAdmin):
     list_display = ("__str__", "enabled", "fetch_recent_enabled",
                     "download_full_csv_enabled", "compare_against_findings_enabled",
-                    "auto_update_enabled", "kev_enabled", "updated_at")
+                    "auto_update_enabled", "kev_enabled", "vulncheck_enabled", "updated_at")
+    exclude = ("vulncheck_api_token_encrypted",)
 
     def has_add_permission(self, request):
         return not EPSSSettings.objects.exists()
@@ -33,6 +36,17 @@ class EPSSCVERecordAdmin(admin.ModelAdmin):
     search_fields = ("cve_id",)
     readonly_fields = ("created_at", "updated_at", "matched_findings_count",
                        "last_compared_at")
+
+
+@admin.register(CTICVERecord)
+class CTICVERecordAdmin(admin.ModelAdmin):
+    list_display = ("cve_id", "epss_score", "epss_date", "known_exploited",
+                    "ransomware_used", "public_exploit_found",
+                    "exploit_in_the_wild", "updated_at")
+    list_filter = ("known_exploited", "ransomware_used", "public_exploit_found",
+                   "exploit_in_the_wild", "epss_date")
+    search_fields = ("cve_id",)
+    readonly_fields = tuple(f.name for f in CTICVERecord._meta.fields)
 
 
 @admin.register(FindingEPSSUpdate)
@@ -56,6 +70,18 @@ class FindingKEVUpdateAdmin(admin.ModelAdmin):
     search_fields = ("cve_id",)
     autocomplete_fields = []
     readonly_fields = tuple(f.name for f in FindingKEVUpdate._meta.fields)
+
+
+@admin.register(FindingVulnCheckUpdate)
+class FindingVulnCheckUpdateAdmin(admin.ModelAdmin):
+    list_display = ("id", "finding_id", "cve_id", "status",
+                    "public_exploit_found", "exploit_in_the_wild",
+                    "poc_found_date", "itw_found_date", "last_updated_at")
+    list_filter = ("status", "public_exploit_found", "exploit_in_the_wild",
+                   "weaponized_exploit_found", "source_index")
+    search_fields = ("cve_id",)
+    autocomplete_fields = []
+    readonly_fields = tuple(f.name for f in FindingVulnCheckUpdate._meta.fields)
 
 
 @admin.register(EPSSUpdateLog)

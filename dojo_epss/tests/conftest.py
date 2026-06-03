@@ -29,7 +29,7 @@ def pytest_configure():
         INSTALLED_APPS=[
             "django.contrib.auth",
             "django.contrib.contenttypes",
-            "dojo_epss.tests.fake_dojo",   # provides a fake `dojo` app label
+            "dojo_epss.tests.fake_dojo.apps.FakeDojoConfig",
             "dojo_epss",
         ],
         DEFAULT_AUTO_FIELD="django.db.models.BigAutoField",

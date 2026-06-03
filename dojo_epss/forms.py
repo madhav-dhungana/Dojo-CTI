@@ -10,6 +10,7 @@ from django.apps import apps
 
 from . import app_settings
 from .models import EPSSSettings, EPSSSeverity, KEVSourceType
+from .services.secrets import SecretCryptoError, encrypt_secret
 
 log = logging.getLogger("dojo_epss.forms")
 
@@ -38,12 +39,6 @@ class EPSSSettingsForm(forms.ModelForm):
         (FETCH_SOURCE_FIRSTORG, "Fetch and compare from FIRST.org"),
         (FETCH_SOURCE_CSV, "Download CSV and compare"),
     )
-    SCHEDULE_INTERVAL_CHOICES = (
-        ("0", "Disabled"),
-        ("12", "Every 12 hours"),
-        ("24", "Every 24 hours"),
-    )
-
     fetch_source = forms.ChoiceField(
         choices=FETCH_SOURCE_CHOICES,
         widget=forms.RadioSelect,
@@ -60,16 +55,45 @@ class EPSSSettingsForm(forms.ModelForm):
         help_text="Choose the Source Format Type",
     )
 
-    epss_schedule_interval = forms.ChoiceField(
+    epss_schedule_interval = forms.IntegerField(
         label="EPSS scheduled sync",
-        choices=SCHEDULE_INTERVAL_CHOICES,
+        min_value=0,
+        max_value=8760,
         help_text="Schedule the Celery Job run for the EPSS scan",
     )
 
-    kev_schedule_interval = forms.ChoiceField(
+    kev_schedule_interval = forms.IntegerField(
         label="KEV scheduled sync",
-        choices=SCHEDULE_INTERVAL_CHOICES,
+        min_value=0,
+        max_value=8760,
         help_text="Schedule the Celery Job run for the KEV scan",
+    )
+
+    vulncheck_api_token = forms.CharField(
+        label="VulnCheck API token",
+        required=False,
+        widget=forms.PasswordInput(attrs={
+            "autocomplete": "new-password",
+            "placeholder": "Leave blank to keep existing token",
+        }),
+        help_text=(
+            "Stored encrypted with DefectDojo's credential key. Environment "
+            "or file-based token overrides are also supported."
+        ),
+    )
+
+    vulncheck_schedule_interval = forms.IntegerField(
+        label="VulnCheck scheduled sync",
+        min_value=0,
+        max_value=8760,
+        help_text="Schedule the Celery Job run for the VulnCheck POC / ITW scan",
+    )
+
+    cti_db_schedule_interval = forms.IntegerField(
+        label="CTI DB scheduled sync",
+        min_value=0,
+        max_value=8760,
+        help_text="Schedule the Celery Job run for the CTI DB sync",
     )
 
     update_severities = forms.MultipleChoiceField(
@@ -119,6 +143,16 @@ class EPSSSettingsForm(forms.ModelForm):
             "kev_source_type",
             "kev_source_url",
             "kev_update_findings_enabled",
+            # VulnCheck
+            "vulncheck_enabled",
+            "vulncheck_api_base_url",
+            "vulncheck_index",
+            "vulncheck_api_token",
+            # CTI DB
+            "cti_db_enabled",
+            "cti_db_sync_epss_enabled",
+            "cti_db_sync_kev_enabled",
+            "cti_db_sync_vulncheck_enabled",
             # URLs
             "api_base_url",
             "csv_base_url",
@@ -141,6 +175,8 @@ class EPSSSettingsForm(forms.ModelForm):
             # Schedule
             "epss_schedule_interval",
             "kev_schedule_interval",
+            "vulncheck_schedule_interval",
+            "cti_db_schedule_interval",
             # HTTP
             "http_timeout_secs",
             "http_retries",
@@ -160,14 +196,14 @@ class EPSSSettingsForm(forms.ModelForm):
         if Product is not None:
             self.fields["update_products"].queryset = Product.objects.all().order_by("name")
         else:
-            self.fields["update_products"].queryset = []
+            self.fields["update_products"].queryset = _empty_queryset()
             self.fields["update_products"].help_text = (
                 "Product model not available — dojo not installed in this Python env."
             )
         if Product_Type is not None:
             self.fields["update_product_types"].queryset = Product_Type.objects.all().order_by("name")
         else:
-            self.fields["update_product_types"].queryset = []
+            self.fields["update_product_types"].queryset = _empty_queryset()
             self.fields["update_product_types"].help_text = (
                 "Product_Type model not available — dojo not installed in this Python env."
             )
@@ -176,6 +212,13 @@ class EPSSSettingsForm(forms.ModelForm):
         self.fields["kev_enabled"].help_text = "Enable KEV Checks"
         self.fields["kev_source_url"].label = "KEV source URL"
         self.fields["kev_update_findings_enabled"].label = "KEV update findings enabled"
+        self.fields["vulncheck_enabled"].label = "VulnCheck enabled"
+        self.fields["vulncheck_api_base_url"].label = "VulnCheck API base URL"
+        self.fields["vulncheck_index"].label = "VulnCheck index"
+        self.fields["cti_db_enabled"].label = "CTI DB enabled"
+        self.fields["cti_db_sync_epss_enabled"].label = "CTI DB EPSS enabled"
+        self.fields["cti_db_sync_kev_enabled"].label = "CTI DB KEV enabled"
+        self.fields["cti_db_sync_vulncheck_enabled"].label = "CTI DB VulnCheck enabled"
 
         # Populate initial selections from the JSONField on the instance.
         instance = kwargs.get("instance")
@@ -194,12 +237,26 @@ class EPSSSettingsForm(forms.ModelForm):
             self.initial.setdefault("kev_source_type", instance.kev_source_type or KEVSourceType.JSON)
             self.initial.setdefault(
                 "epss_schedule_interval",
-                str(instance.schedule_interval_hours if instance.schedule_enabled else 0),
+                instance.schedule_interval_hours if instance.schedule_enabled else 0,
             )
             self.initial.setdefault(
                 "kev_schedule_interval",
-                str(instance.kev_schedule_interval_hours if instance.kev_schedule_enabled else 0),
+                instance.kev_schedule_interval_hours if instance.kev_schedule_enabled else 0,
             )
+            self.initial.setdefault(
+                "vulncheck_schedule_interval",
+                instance.vulncheck_schedule_interval_hours
+                if instance.vulncheck_schedule_enabled else 0,
+            )
+            self.initial.setdefault(
+                "cti_db_schedule_interval",
+                instance.cti_db_schedule_interval_hours
+                if instance.cti_db_schedule_enabled else 0,
+            )
+            if instance.has_vulncheck_token_configured():
+                self.fields["vulncheck_api_token"].widget.attrs[
+                    "placeholder"
+                ] = "Token configured; leave blank to keep it"
 
     # ----- value coercion: ModelMultipleChoiceField yields a QuerySet; the
     # underlying JSONField wants a plain list of int PKs.
@@ -261,9 +318,52 @@ class EPSSSettingsForm(forms.ModelForm):
         if cleaned.get("kev_enabled") and not cleaned.get("kev_source_url"):
             self.add_error("kev_source_url", "Enter a KEV source URL.")
 
-        for field in ("epss_schedule_interval", "kev_schedule_interval"):
-            if cleaned.get(field) not in {"0", "12", "24"}:
-                self.add_error(field, "Choose Disabled, Every 12 hours, or Every 24 hours.")
+        for field in ("epss_schedule_interval", "kev_schedule_interval", "cti_db_schedule_interval"):
+            hours = cleaned.get(field)
+            if hours is None:
+                self.add_error(field, "Enter 0 to disable or a positive hour interval.")
+            elif hours != 0 and hours < 1:
+                self.add_error(field, "Use 0 to disable or at least 1 hour.")
+
+        if cleaned.get("cti_db_enabled") and not (
+            cleaned.get("cti_db_sync_epss_enabled")
+            or cleaned.get("cti_db_sync_kev_enabled")
+            or cleaned.get("cti_db_sync_vulncheck_enabled")
+        ):
+            self.add_error(
+                "cti_db_enabled",
+                "Enable at least one CTI DB source: EPSS, KEV, or VulnCheck.",
+            )
+
+        encrypted_token = ""
+        token = (cleaned.get("vulncheck_api_token") or "").strip()
+        if token:
+            try:
+                encrypted_token = encrypt_secret(token)
+            except SecretCryptoError as exc:
+                self.add_error("vulncheck_api_token", str(exc))
+        self._encrypted_vulncheck_api_token = encrypted_token
+
+        if cleaned.get("vulncheck_enabled"):
+            has_token = bool(
+                token
+                or app_settings.secret_override("VULNCHECK_API_TOKEN")
+                or getattr(self.instance, "vulncheck_api_token_encrypted", "")
+            )
+            if not has_token:
+                self.add_error(
+                    "vulncheck_api_token",
+                    "Enter a VulnCheck API token or configure a token override.",
+                )
+
+        if not (cleaned.get("vulncheck_index") or "").strip():
+            self.add_error("vulncheck_index", "Enter a VulnCheck index.")
+
+        hours = cleaned.get("vulncheck_schedule_interval")
+        if hours is None:
+            self.add_error("vulncheck_schedule_interval", "Enter 0 to disable or a positive hour interval.")
+        elif hours != 0 and hours < 1:
+            self.add_error("vulncheck_schedule_interval", "Use 0 to disable or at least 1 hour.")
         return cleaned
 
     # This function saves settings choices. This function needs valid cleaned data.
@@ -273,17 +373,38 @@ class EPSSSettingsForm(forms.ModelForm):
         obj.fetch_recent_enabled = source == self.FETCH_SOURCE_FIRSTORG
         obj.download_full_csv_enabled = source == self.FETCH_SOURCE_CSV
 
-        epss_interval = self.cleaned_data.get("epss_schedule_interval") or "0"
-        obj.schedule_enabled = epss_interval != "0"
-        if epss_interval != "0":
+        epss_interval = self.cleaned_data.get("epss_schedule_interval") or 0
+        obj.schedule_enabled = int(epss_interval) != 0
+        if int(epss_interval) != 0:
             obj.schedule_interval_hours = int(epss_interval)
 
-        kev_interval = self.cleaned_data.get("kev_schedule_interval") or "0"
-        obj.kev_schedule_enabled = kev_interval != "0"
-        if kev_interval != "0":
+        kev_interval = self.cleaned_data.get("kev_schedule_interval") or 0
+        obj.kev_schedule_enabled = int(kev_interval) != 0
+        if int(kev_interval) != 0:
             obj.kev_schedule_interval_hours = int(kev_interval)
+
+        vulncheck_interval = self.cleaned_data.get("vulncheck_schedule_interval") or 0
+        obj.vulncheck_schedule_enabled = int(vulncheck_interval) != 0
+        if int(vulncheck_interval) != 0:
+            obj.vulncheck_schedule_interval_hours = int(vulncheck_interval)
+
+        cti_db_interval = self.cleaned_data.get("cti_db_schedule_interval") or 0
+        obj.cti_db_schedule_enabled = int(cti_db_interval) != 0
+        if int(cti_db_interval) != 0:
+            obj.cti_db_schedule_interval_hours = int(cti_db_interval)
+
+        if getattr(self, "_encrypted_vulncheck_api_token", ""):
+            obj.vulncheck_api_token_encrypted = self._encrypted_vulncheck_api_token
 
         if commit:
             obj.save()
             self.save_m2m()
         return obj
+
+
+# This function returns an empty fallback queryset. This function needs the fake or real Finding model.
+def _empty_queryset():
+    fallback = _get_dojo_model("Finding")
+    if fallback is None:
+        return None
+    return fallback.objects.none()

@@ -2,7 +2,7 @@
 
 Continuous threat monitoring Django library for DefectDojo.
 
-Dojo CTI enriches your existing DefectDojo Findings with real-world exploitability signals. It scans CVEs already present in DefectDojo against FIRST.org EPSS data, CISA KEV data, and ransomware usage indicators, POC, ITW so teams can continuously understand which vulnerabilities deserve priority.
+Dojo CTI enriches your existing DefectDojo Findings with real-world exploitability signals. It scans CVEs already present in DefectDojo against FIRST.org EPSS data, CISA KEV data, ransomware usage indicators, and VulnCheck POC / exploitation-in-the-wild intelligence so teams can continuously understand which vulnerabilities deserve priority.
 
 The library is built for Django-DefectDojo and is designed to be additive: it provides its own Django app, management UI, scheduled jobs, manual scans, audit logs, and API output while keeping DefectDojo's core models and business logic intact.
 
@@ -12,16 +12,21 @@ The library is built for Django-DefectDojo and is designed to be additive: it pr
 - KEV scan using CISA JSON or CSV feeds by default
 - Ransomware usage signal from KEV-compatible sources
 - First-found KEV date tracking without overwriting existing dates on later scans
+- VulnCheck POC and exploitation-in-the-wild checks against existing Finding CVEs
+- Encrypted VulnCheck token storage using DefectDojo's credential encryption key
+- Environment/file-based VulnCheck token override for Docker and Kubernetes users
+- Chunked VulnCheck API requests for large inventories such as 60k-70k CVEs
+- Optional CTI DB for package-owned global CVE intelligence, not limited to local Findings
 - Manual fetch and compare actions from the EPSS / KEV UI
 - Scheduled scans using DefectDojo's Celery beat and workers
-- Configurable EPSS source: FIRST.org API or or custom CSV URL
+- Configurable EPSS source: FIRST.org API or custom CSV URL
 - Configurable KEV source URL and source format
 - Finding scope controls for eligible EPSS updates
 - EPSS / KEV dashboard and update logs
-- Additive EPSS Update / KEV indicators on the Findings list
+- Additive EPSS Update / KEV / POC / ITW indicators in Finding match data
 - Swagger-visible API endpoint for Finding match data
+- Swagger-visible CTI DB endpoint for CVE status lookup
 - Docker installer for DefectDojo dev and production-style deployments
-- Check if the stored CVE is exploited in the wild (ITW) and Proof of Concept (POC) is publicly available - (Developement in Progress)
 
 ## What It Does
 
@@ -34,11 +39,15 @@ The library:
 - compares EPSS records with existing Findings
 - checks whether Finding CVEs are listed as Known Exploited Vulnerabilities
 - checks whether those CVEs are known to be used in ransomware campaigns
+- checks whether those CVEs have public proof-of-concept exploit data
+- checks whether those CVEs are reported exploited in the wild
 - updates supported Finding fields positively and safely
+- stores VulnCheck POC / ITW results in app-owned snapshot tables
+- optionally builds a local CTI DB from all CVEs available through configured sources
 - records every run in audit-friendly update logs
 - exposes results in the UI and API
 
-Dojo CTI does not import a vulnerability catalog for its own. It focuses on the CVEs already present in your DefectDojo environment so the output reflects your actual vulnerability posture.
+By default, Dojo CTI focuses on CVEs already present in your DefectDojo environment so the output reflects your actual vulnerability posture. If CTI DB is enabled, it also maintains an app-owned CVE intelligence catalog that other tools can query without hitting public sources during every audit scan.
 
 ## Data Sources
 
@@ -48,8 +57,10 @@ Default sources:
 - EPSS CSV: `https://epss.empiricalsecurity.com`
 - KEV JSON: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
 - KEV CSV: `https://www.cisa.gov/sites/default/files/csv/known_exploited_vulnerabilities.csv`
+- VulnCheck API: `https://api.vulncheck.com/v3`
+- VulnCheck default index: `exploits`
 
-The Settings page lets you point EPSS and KEV sources to compatible internal mirrors.
+The Settings page lets you point EPSS and KEV sources to compatible internal mirrors. VulnCheck access is controlled by the API token: community and commercial tokens automatically expose the indexes licensed for that token.
 
 ## Dependencies
 
@@ -148,15 +159,20 @@ Use development mode only when `/app/docker-compose.yml` exists inside the `uwsg
 After installation:
 
 1. Log in to DefectDojo as a superuser.
-2. Open `EPSS / KEV Settings`.
+2. Open `EPSS / KEV / VulnCheck / CTI DB Settings`.
 3. Enable the module.
 4. Choose one EPSS source: FIRST.org fetch or daily CSV download.
 5. Enable KEV checks if you want KEV and ransomware enrichment.
-6. Save settings.
-7. Open `Manual Run`.
-8. Run `Fetch and Compare from FIRST.org` or `Download CSV and Compare`.
-9. Optionally run `Fetch KEV and Update Findings`.
-10. Review the dashboard, Finding Matches, Update Logs, and Findings list.
+6. Enable VulnCheck checks if you want POC and exploitation-in-the-wild enrichment.
+7. Add a VulnCheck API token, or provide one through environment/file override.
+8. Optionally enable CTI DB if you want a package-owned CVE intelligence catalog.
+9. Save settings.
+10. Open `Manual Run`.
+11. Run `Fetch and Compare from FIRST.org` or `Download CSV and Compare`.
+12. Optionally run `Fetch KEV and Update Findings`.
+13. Optionally run `Fetch VulnCheck POC / ITW Signals`.
+14. Optionally run `Sync CTI DB`.
+15. Review the dashboard, Finding Matches, CTI DB, Update Logs, and Findings list.
 
 ## Uninstall
 
@@ -189,23 +205,24 @@ The installer adds one static hourly dispatcher task:
 dojo_epss.schedule_dispatcher_task
 ```
 
-The dispatcher checks the EPSS / KEV Settings page and only runs scans when the configured interval is due.
+The dispatcher checks the EPSS / KEV / VulnCheck / CTI DB Settings page and only runs scans when the configured interval is due.
 
-Supported UI intervals:
+UI schedule fields use hours:
 
-- Disabled
-- Every 12 hours
-- Every 24 hours
+- `0` disables that scheduled sync
+- any positive hour value up to `8760` enables that scheduled sync
 
 This keeps the Celery beat configuration stable while letting administrators control scan timing from the UI.
 
 ## Manual Actions
 
-Manual actions are available from the EPSS / KEV Manual Run page:
+Manual actions are available from the EPSS / KEV / VulnCheck / CTI DB Manual Run page:
 
 - Fetch and Compare from FIRST.org
 - Download CSV and Compare
 - Fetch KEV and Update Findings
+- Fetch VulnCheck POC / ITW Signals
+- Sync CTI DB
 - Auto-update eligible Findings
 - Test FIRST.org API connectivity
 
@@ -213,10 +230,11 @@ Manual actions are superuser-only and write update logs.
 
 ## API
 
-Dojo CTI exposes a Swagger-visible API endpoint:
+Dojo CTI exposes Swagger-visible API endpoints:
 
 ```http
 GET /api/v2/dojo_epss/finding-matches/
+GET /api/v2/dojo_epss/cti-cves/
 ```
 
 Supported query filters:
@@ -226,12 +244,16 @@ Supported query filters:
 - `cve_id`
 - `kev=true`
 - `ransomware=true`
+- `poc=true`
+- `itw=true`
 
-The response includes EPSS match data and a KEV snapshot when available.
+The response includes EPSS match data plus KEV and VulnCheck snapshots when available.
+
+The CTI DB endpoint supports CVE catalog filters such as `cve_id`, `q`, `kev=true`, `ransomware=true`, `poc=true`, `itw=true`, and `epss_min`.
 
 ## Permissions
 
-Read-only EPSS / KEV pages are available to staff, superusers, or users with:
+Read-only EPSS / KEV / VulnCheck / CTI DB pages are available to staff, superusers, or users with:
 
 ```text
 dojo_epss.view_epss_dashboard
@@ -244,6 +266,8 @@ Detailed update-log request parameters, source URLs, and error details are visib
 ## Security Notes
 
 EPSS and KEV source URLs are configurable so organizations can use internal mirrors. Treat those settings as trusted administrator inputs.
+
+VulnCheck API tokens are stored encrypted using DefectDojo's credential encryption helper and are never displayed after saving. Operators can avoid DB token storage by providing `DOJO_EPSS_VULNCHECK_API_TOKEN`, `DOJO_EPSS_VULNCHECK_API_TOKEN_FILE`, `DD_DOJO_EPSS_VULNCHECK_API_TOKEN`, or `DD_DOJO_EPSS_VULNCHECK_API_TOKEN_FILE` to the Django and Celery services.
 
 The library:
 
@@ -258,5 +282,3 @@ The library:
 Dojo EPSS is released under the BSD-3-Clause License.
 
 See [LICENSE](LICENSE).
-
-

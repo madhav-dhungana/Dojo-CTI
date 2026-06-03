@@ -1,7 +1,7 @@
 {% extends "dojo_epss/base.html" %}
 {% load i18n %}
 
-{% block epss_page_title %}{% trans "Manual EPSS / KEV actions" %}{% endblock %}
+{% block epss_page_title %}{% trans "Manual EPSS / KEV / VulnCheck / CTI DB actions" %}{% endblock %}
 
 {% block epss_page_body %}
 <style>
@@ -28,7 +28,7 @@
 
 {% if not settings.enabled %}
   <div class="alert alert-warning">
-    {% trans "The EPSS/KEV module is currently disabled in settings. Manual actions still record audit logs but actions that depend on the module will be marked 'skipped'." %}
+    {% trans "The EPSS / KEV / VulnCheck module is currently disabled in settings. Manual actions still record audit logs but actions that depend on the module will be marked 'skipped'." %}
   </div>
 {% endif %}
 
@@ -101,6 +101,31 @@
       </div>
     </div>
 
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Check POC / ITW Data" %}</div>
+      <div class="panel-body">
+        {% if settings.vulncheck_enabled and settings.has_vulncheck_token_configured %}
+          <form action="{% url 'dojo_epss:action_vulncheck_sync' %}" method="post" style="margin-bottom: 6px;">
+            {% csrf_token %}
+            <button class="btn btn-primary btn-block dojo-epss-action-button" type="submit">
+              {% trans "Fetch VulnCheck POC / ITW Signals" %}
+            </button>
+            <p class="help-block" style="margin-top: 6px;">
+              {% trans "Checks CVEs already present in DefectDojo Findings and stores POC / exploitation-in-the-wild signals in Dojo EPSS tables." %}
+            </p>
+          </form>
+        {% elif not settings.vulncheck_enabled %}
+          <div class="alert alert-info" style="margin-top: 12px;">
+            {% trans "VulnCheck checks are disabled. Open EPSS Settings to enable them." %}
+          </div>
+        {% else %}
+          <div class="alert alert-info" style="margin-top: 12px;">
+            {% trans "VulnCheck API token is not configured. Add it in EPSS Settings or provide an environment/file override." %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
   </div>
 
   <div class="col-md-6">
@@ -119,6 +144,27 @@
             {% trans "Auto-update eligible Findings" %}
           </button>
         </form>
+      </div>
+    </div>
+
+    <div class="panel panel-default">
+      <div class="panel-heading">{% trans "Sync CTI DB" %}</div>
+      <div class="panel-body">
+        {% if settings.cti_db_enabled %}
+          <form action="{% url 'dojo_epss:action_cti_db_sync' %}" method="post" style="margin-bottom: 6px;">
+            {% csrf_token %}
+            <button class="btn btn-primary btn-block dojo-epss-action-button" type="submit">
+              {% trans "Sync CTI DB" %}
+            </button>
+            <p class="help-block" style="margin-top: 6px;">
+              {% trans "Refreshes package-owned CVE intelligence from enabled CTI DB sources. This does not update core DefectDojo Finding fields." %}
+            </p>
+          </form>
+        {% else %}
+          <div class="alert alert-info" style="margin-top: 12px;">
+            {% trans "CTI DB is disabled. Open EPSS Settings to enable it." %}
+          </div>
+        {% endif %}
       </div>
     </div>
 

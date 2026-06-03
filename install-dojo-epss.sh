@@ -403,8 +403,8 @@ cat <<'EOM'
     1. EPSS → Settings   → flip "Enabled" on, save.
     2. EPSS → Manual Run → "Test FIRST.org API connectivity".
     3. EPSS → Manual Run → "Fetch and Compare from FIRST.org" or CSV equivalent.
-    4. Optional: enable KEV settings, then run "Fetch KEV and Update Findings".
-    5. Open Findings list → EPSS Update / KEV fields should be visible.
+    4. Optional: enable KEV and VulnCheck settings, then run their manual syncs.
+    5. Open Finding Matches → EPSS, KEV, POC, and ITW fields should be visible.
 
   To uninstall later, from this same folder:
     bash install-dojo-epss.sh --uninstall

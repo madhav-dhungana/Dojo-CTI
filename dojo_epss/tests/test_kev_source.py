@@ -71,3 +71,28 @@ def test_csv_source_filters_to_requested_cves(settings_row):
     assert result.total_rows_seen == 2
     assert sorted(result.rows_by_cve) == ["CVE-2024-0002"]
     assert result.rows_by_cve["CVE-2024-0002"].ransomware_used is True
+
+
+@responses.activate
+@pytest.mark.django_db
+def test_json_source_can_return_full_feed(settings_row):
+    settings_row.kev_source_type = KEVSourceType.JSON
+    settings_row.kev_source_url = "https://example.test/kev.json"
+    settings_row.save()
+
+    responses.add(
+        responses.GET,
+        settings_row.kev_source_url,
+        body=json.dumps({
+            "vulnerabilities": [
+                {"cveID": "CVE-2024-0001", "dateAdded": "2026-05-21"},
+                {"cveID": "CVE-2024-0002", "dateAdded": "2026-05-22"},
+            ],
+        }),
+        status=200,
+        content_type="application/json",
+    )
+
+    result = fetch_matching_kev_rows(None, settings=settings_row)
+    assert result.total_rows_seen == 2
+    assert sorted(result.rows_by_cve) == ["CVE-2024-0001", "CVE-2024-0002"]

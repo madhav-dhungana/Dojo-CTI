@@ -185,6 +185,12 @@ def compare(
             "matched_finding_cves": details,
             "findings_skipped_no_epss_data": skipped_no_epss,
         }
+        update_log.save(update_fields=[
+            "total_findings_scanned",
+            "total_matches",
+            "total_skipped",
+            "details",
+        ])
 
     log.info(
         "compare(): scanned=%d with_cves=%d matched=%d skipped(no-epss)=%d",

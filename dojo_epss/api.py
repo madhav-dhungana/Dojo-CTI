@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import generics, serializers
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import EPSSStatus, FindingEPSSUpdate, FindingKEVUpdate
+from .models import CTICVERecord, EPSSStatus, FindingEPSSUpdate, FindingKEVUpdate, FindingVulnCheckUpdate
 
 
 class DojoEpssDashboardPermission(BasePermission):
@@ -40,6 +42,31 @@ class FindingKEVSnapshotSerializer(serializers.Serializer):
     last_updated_at = serializers.DateTimeField(allow_null=True)
 
 
+class FindingVulnCheckSnapshotSerializer(serializers.Serializer):
+    """VulnCheck POC and ITW data attached to one finding match."""
+
+    cve_id = serializers.CharField(allow_blank=True)
+    public_exploit_found = serializers.BooleanField()
+    exploit_in_the_wild = serializers.BooleanField()
+    weaponized_exploit_found = serializers.BooleanField()
+    commercial_exploit_found = serializers.BooleanField()
+    reported_exploited_by_threat_actors = serializers.BooleanField()
+    reported_exploited_by_ransomware = serializers.BooleanField()
+    reported_exploited_by_botnets = serializers.BooleanField()
+    in_cisa_kev = serializers.BooleanField()
+    in_vulncheck_kev = serializers.BooleanField()
+    max_exploit_maturity = serializers.CharField(allow_blank=True)
+    poc_found_date = serializers.DateField(allow_null=True)
+    itw_found_date = serializers.DateField(allow_null=True)
+    exploit_count = serializers.IntegerField()
+    source_index = serializers.CharField(allow_blank=True)
+    source_links = serializers.JSONField()
+    status = serializers.CharField()
+    reason = serializers.CharField(allow_blank=True)
+    last_checked_at = serializers.DateTimeField(allow_null=True)
+    last_updated_at = serializers.DateTimeField(allow_null=True)
+
+
 class FindingEPSSMatchSerializer(serializers.ModelSerializer):
     """EPSS and KEV match data for one DefectDojo Finding."""
 
@@ -47,6 +74,7 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
     finding_title = serializers.SerializerMethodField()
     source_record_id = serializers.IntegerField(read_only=True)
     kev = serializers.SerializerMethodField()
+    vulncheck = serializers.SerializerMethodField()
 
     class Meta:
         model = FindingEPSSUpdate
@@ -62,6 +90,7 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
             "reason",
             "source_record_id",
             "kev",
+            "vulncheck",
             "last_checked_at",
             "last_updated_at",
             "created_at",
@@ -80,13 +109,20 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
             return None
         return FindingKEVSnapshotSerializer(kev).data
 
+    # This function returns VulnCheck data. This function needs a match row.
+    def get_vulncheck(self, obj) -> dict | None:
+        snapshot = getattr(obj, "vulncheck_snapshot", None)
+        if snapshot is None:
+            return None
+        return FindingVulnCheckSnapshotSerializer(snapshot).data
+
 
 @extend_schema(
     tags=["dojo_epss"],
     summary="List EPSS finding matches",
     description=(
         "Returns Finding EPSS match rows created by the dojo_epss matcher. "
-        "Each row includes the related KEV snapshot when one exists."
+        "Each row includes related KEV and VulnCheck snapshots when they exist."
     ),
     parameters=[
         OpenApiParameter(
@@ -124,6 +160,20 @@ class FindingEPSSMatchSerializer(serializers.ModelSerializer):
             required=False,
             description="When true, return only rows with ransomware usage data.",
         ),
+        OpenApiParameter(
+            "poc",
+            OpenApiTypes.BOOL,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="When true, return only rows with VulnCheck public POC data.",
+        ),
+        OpenApiParameter(
+            "itw",
+            OpenApiTypes.BOOL,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="When true, return only rows with VulnCheck exploitation-in-the-wild data.",
+        ),
     ],
     responses={200: FindingEPSSMatchSerializer(many=True)},
 )
@@ -157,6 +207,10 @@ class FindingEPSSMatchListAPIView(generics.ListAPIView):
             qs = qs.filter(finding_id__in=_kev_finding_ids(known=True))
         if _truthy_query(self.request.query_params.get("ransomware")):
             qs = qs.filter(finding_id__in=_kev_finding_ids(ransomware=True))
+        if _truthy_query(self.request.query_params.get("poc")):
+            qs = qs.filter(finding_id__in=_vulncheck_finding_ids(poc=True))
+        if _truthy_query(self.request.query_params.get("itw")):
+            qs = qs.filter(finding_id__in=_vulncheck_finding_ids(itw=True))
         return qs
 
     # This function lists match rows. This function needs a request.
@@ -180,8 +234,129 @@ class FindingEPSSMatchListAPIView(generics.ListAPIView):
             row.finding_id: row
             for row in FindingKEVUpdate.objects.filter(finding_id__in=ids)
         }
+        vulncheck_by_finding = {
+            row.finding_id: row
+            for row in FindingVulnCheckUpdate.objects.filter(finding_id__in=ids)
+        }
         for row in rows:
             row.kev_snapshot = kev_by_finding.get(row.finding_id)
+            row.vulncheck_snapshot = vulncheck_by_finding.get(row.finding_id)
+
+
+class CTICVERecordSerializer(serializers.ModelSerializer):
+    """CTI DB data for one CVE."""
+
+    class Meta:
+        model = CTICVERecord
+        fields = (
+            "id",
+            "cve_id",
+            "epss_score",
+            "epss_percentile",
+            "epss_date",
+            "known_exploited",
+            "ransomware_used",
+            "kev_date_added",
+            "kev_found_date",
+            "ransomware_found_date",
+            "public_exploit_found",
+            "exploit_in_the_wild",
+            "commercial_exploit_found",
+            "weaponized_exploit_found",
+            "reported_exploited_by_threat_actors",
+            "reported_exploited_by_ransomware",
+            "reported_exploited_by_botnets",
+            "reported_exploited_by_honeypot_service",
+            "reported_exploited_by_vulncheck_canaries",
+            "in_cisa_kev",
+            "in_vulncheck_kev",
+            "max_exploit_maturity",
+            "poc_found_date",
+            "itw_found_date",
+            "exploit_count",
+            "vulncheck_source_index",
+            "vulncheck_source_links",
+            "first_seen_at",
+            "last_seen_at",
+            "last_changed_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+@extend_schema(
+    tags=["dojo_epss"],
+    summary="List CTI DB CVE records",
+    description=(
+        "Returns package-owned CTI DB records. These records are global CVE "
+        "intelligence rows and are not limited to DefectDojo Findings."
+    ),
+    parameters=[
+        OpenApiParameter(
+            "cve_id",
+            OpenApiTypes.STR,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="Filter by exact CVE id.",
+        ),
+        OpenApiParameter(
+            "q",
+            OpenApiTypes.STR,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="Case-insensitive CVE id search.",
+        ),
+        OpenApiParameter("kev", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("ransomware", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("poc", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("itw", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter(
+            "epss_min",
+            OpenApiTypes.NUMBER,
+            OpenApiParameter.QUERY,
+            required=False,
+            description="Minimum EPSS score.",
+        ),
+    ],
+    responses={200: CTICVERecordSerializer(many=True)},
+)
+class CTICVERecordListAPIView(generics.ListAPIView):
+    """Read-only API for CTI DB CVE records."""
+
+    serializer_class = CTICVERecordSerializer
+    permission_classes = (IsAuthenticated, DojoEpssDashboardPermission)
+
+    # This function builds the CTI queryset. This function needs query parameters.
+    def get_queryset(self):
+        qs = CTICVERecord.objects.all().order_by("-epss_score", "cve_id")
+
+        cve_id = (self.request.query_params.get("cve_id") or "").strip().upper()
+        if cve_id:
+            qs = qs.filter(cve_id=cve_id)
+
+        q = (self.request.query_params.get("q") or "").strip().upper()
+        if q:
+            qs = qs.filter(cve_id__icontains=q)
+
+        if _truthy_query(self.request.query_params.get("kev")):
+            qs = qs.filter(known_exploited=True)
+        if _truthy_query(self.request.query_params.get("ransomware")):
+            qs = qs.filter(ransomware_used=True)
+        if _truthy_query(self.request.query_params.get("poc")):
+            qs = qs.filter(public_exploit_found=True)
+        if _truthy_query(self.request.query_params.get("itw")):
+            qs = qs.filter(exploit_in_the_wild=True)
+
+        epss_min = (self.request.query_params.get("epss_min") or "").strip()
+        if epss_min:
+            try:
+                min_value = Decimal(epss_min)
+                if min_value.is_finite():
+                    qs = qs.filter(epss_score__gte=min_value)
+            except InvalidOperation:
+                pass
+        return qs
 
 
 # This function reads boolean query values. This function needs a raw value.
@@ -196,4 +371,14 @@ def _kev_finding_ids(*, known: bool = False, ransomware: bool = False):
         qs = qs.filter(known_exploited=True)
     if ransomware:
         qs = qs.filter(ransomware_used=True)
+    return qs.values_list("finding_id", flat=True)
+
+
+# This function finds VulnCheck Finding ids. This function needs a signal filter.
+def _vulncheck_finding_ids(*, poc: bool = False, itw: bool = False):
+    qs = FindingVulnCheckUpdate.objects.all()
+    if poc:
+        qs = qs.filter(public_exploit_found=True)
+    if itw:
+        qs = qs.filter(exploit_in_the_wild=True)
     return qs.values_list("finding_id", flat=True)
