@@ -9,17 +9,17 @@ The library is built for Django-DefectDojo and is designed to be additive: it pr
 ## Features
 
 - EPSS scan against existing DefectDojo Findings
-- KEV scan using CISA JSON or CSV feeds by default
+- KEV scan using API JSON or CSV feeds 
 - Ransomware usage signal from KEV-compatible sources
 - First-found KEV date tracking without overwriting existing dates on later scans
-- VulnCheck POC and exploitation-in-the-wild checks against existing Finding CVEs
-- Encrypted VulnCheck token storage using DefectDojo's credential encryption key
-- Environment/file-based VulnCheck token override for Docker and Kubernetes users
-- Chunked VulnCheck API requests for large inventories such as 60k-70k CVEs
-- Optional CTI DB for package-owned global CVE intelligence, not limited to local Findings
+- POC and exploitation-in-the-wild(ITW) checks against existing Finding CVEs
+- Encrypted thirdparty token storage for the api access using DefectDojo's credential encryption key
+- Environment/file-based  token override for Docker and Kubernetes deployment
+- ITW/POC  API requests for large inventories such as 60k-70k CVEs
+-  CTI DB for package-owned global CVE intelligence, which can be utiized by other services, not limited to local Findings
 - Manual fetch and compare actions from the EPSS / KEV UI
 - Scheduled scans using DefectDojo's Celery beat and workers
-- Configurable EPSS source: FIRST.org API or custom CSV URL
+- Configurable EPSS source from API or custom CSV URL
 - Configurable KEV source URL and source format
 - Finding scope controls for eligible EPSS updates
 - EPSS / KEV dashboard and update logs
@@ -30,7 +30,7 @@ The library is built for Django-DefectDojo and is designed to be additive: it pr
 
 ## What It Does
 
-Dojo CTI helps vulnerability teams move beyond static severity. It continuously enriches Findings with exploitability and threat intelligence signals that can change over time.
+Dojo CTI helps vulnerability management teams move beyond static severity. Dojo CTI continuously enriches Findings with exploitability and threat intelligence signals that can change over time.
 
 The library:
 
@@ -49,18 +49,16 @@ The library:
 
 By default, Dojo CTI focuses on CVEs already present in your DefectDojo environment so the output reflects your actual vulnerability posture. If CTI DB is enabled, it also maintains an app-owned CVE intelligence catalog that other tools can query without hitting public sources during every audit scan.
 
-## Data Sources
 
-Default sources:
 
-- EPSS API: `https://api.first.org/data/v1/epss`
-- EPSS CSV: `https://epss.empiricalsecurity.com`
-- KEV JSON: `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
-- KEV CSV: `https://www.cisa.gov/sites/default/files/csv/known_exploited_vulnerabilities.csv`
-- VulnCheck API: `https://api.vulncheck.com/v3`
-- VulnCheck default index: `exploits`
+The Settings page lets you point EPSS and KEV sources to compatible internal mirrors. POC/ITW is analyzed via VulnCheck at the moment and the access is controlled by the API token: community and commercial tokens automatically expose the indexes licensed for that token.
 
-The Settings page lets you point EPSS and KEV sources to compatible internal mirrors. VulnCheck access is controlled by the API token: community and commercial tokens automatically expose the indexes licensed for that token.
+## Development Plan
+- Notify via Teams/Slack if the stored vulnerability passes certain scores or level
+- Advanced Risk Scoring Engine inside DefectDojo so that you can make and apply multiple custom risk plans based on asset types and organizations. 
+
+
+
 
 ## Dependencies
 
@@ -89,7 +87,7 @@ DefectDojo pins many runtime packages centrally, so this library keeps dependenc
 Clone the repository first:
 
 ```bash
-git clone https://github.com/madhav-dhungana/Dojo-EPSS.git
+git clone https://github.com/madhav-dhungana/Dojo-CTI
 ```
 
 Then run the installer from the root of your DefectDojo checkout.
