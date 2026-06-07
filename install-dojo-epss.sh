@@ -134,30 +134,21 @@ rsync_pkg() {
 }
 
 apply_patches() {
-    log "Applying template patches …"
-    local applied_any=0
-    for p in 01-sidebar-menu.patch 02-findings-list-epss-update-column.patch; do
-        local f="$PKG_LOCAL/patches/$p"
-        [[ -f "$f" ]] || die "Patch missing: $f"
-        if patch --forward --dry-run -p1 --silent < "$f" 2>/dev/null; then
-            patch --forward -p1 --silent < "$f"
-            ok "applied $p"; applied_any=1
-        else
-            warn "$p already applied — skipping."
-        fi
-    done
-    [[ $applied_any -eq 1 ]] || true
+    log "Applying template insertions …"
+    local patcher="$PKG_LOCAL/patches/apply_template_patches.py"
+    [[ -f "$patcher" ]] || die "Template patcher missing: $patcher"
+    python3 "$patcher" .
+    ok "template insertions applied."
 }
 
 reverse_patches() {
-    log "Reversing template patches …"
-    for p in 02-findings-list-epss-update-column.patch 01-sidebar-menu.patch; do
-        local f="$PKG_LOCAL/patches/$p"
-        if [[ -f "$f" ]]; then
-            patch -R -p1 --forward --silent < "$f" 2>/dev/null \
-                || warn "Reverse-patch $p failed (probably already reversed)."
-        fi
-    done
+    log "Reversing template insertions …"
+    local patcher="$PKG_LOCAL/patches/apply_template_patches.py"
+    if [[ -f "$patcher" ]]; then
+        python3 "$patcher" --reverse . || warn "Template reverse failed (probably already reversed)."
+    else
+        warn "Template patcher missing; skipping template reverse."
+    fi
 }
 
 # Returns the local_settings.py content (sans markers) on stdout.

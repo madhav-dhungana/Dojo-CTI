@@ -1,0 +1,26 @@
+{% comment %}
+Tailwind/Alpine sidebar entry for the EPSS section.
+
+This fragment mirrors DefectDojo's new UI navigation markup. It renders
+nothing until dojo_epss URLs are mounted.
+{% endcomment %}
+{% load i18n %}
+{% url 'dojo_epss:dashboard' as epss_dashboard_url %}
+{% if epss_dashboard_url %}
+<div x-data="{ open: false }" class="dojo-epss-menu">
+    <a href="{{ epss_dashboard_url }}" @click.prevent="open = !open"
+       class="flex items-center gap-3 px-4 py-2 text-gray-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer">
+        <i class="fa-solid fa-shield-halved w-5 text-center flex-shrink-0"></i>
+        <span class="flex-1 truncate">{% trans "EPSS" %}</span>
+        <i :class="open && 'rotate-90'" class="fa-solid fa-chevron-right text-xs transition-transform duration-200"></i>
+    </a>
+    <div x-show="open" x-transition.duration.200ms x-cloak class="overflow-hidden bg-black/10">
+        <a href="{{ epss_dashboard_url }}" class="block py-1.5 pl-12 pr-4 text-sm text-gray-400 hover:text-white hover:bg-white/10">{% trans "EPSS Dashboard" %}</a>
+        <a href="{% url 'dojo_epss:settings' %}" class="block py-1.5 pl-12 pr-4 text-sm text-gray-400 hover:text-white hover:bg-white/10">{% trans "EPSS Settings" %}</a>
+        <a href="{% url 'dojo_epss:finding_matches' %}" class="block py-1.5 pl-12 pr-4 text-sm text-gray-400 hover:text-white hover:bg-white/10">{% trans "Finding Matches" %}</a>
+        <a href="{% url 'dojo_epss:cti_db' %}" class="block py-1.5 pl-12 pr-4 text-sm text-gray-400 hover:text-white hover:bg-white/10">{% trans "CTI DB" %}</a>
+        <a href="{% url 'dojo_epss:logs' %}" class="block py-1.5 pl-12 pr-4 text-sm text-gray-400 hover:text-white hover:bg-white/10">{% trans "Update Logs" %}</a>
+        <a href="{% url 'dojo_epss:manual_run' %}" class="block py-1.5 pl-12 pr-4 text-sm text-gray-400 hover:text-white hover:bg-white/10">{% trans "Manual Run" %}</a>
+    </div>
+</div>
+{% endif %}
