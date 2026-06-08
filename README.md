@@ -97,8 +97,8 @@ Example:
 ```bash
 cd ~/path-to-your-DefectDojo/django-DefectDojo
 
-bash "/path/to/Dojo-EPSS/install-dojo-epss.sh" \
-     --source "/path/to/Dojo-EPSS" \
+bash "/path/to/Dojo-CTI/install-dojo-epss.sh" \
+     --source "/path/to/Dojo-CTI" \
      --mode prod
 ```
 
